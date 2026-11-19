@@ -42,8 +42,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "accounts",
     "assets",
+    "workflows",
 ]
-
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
