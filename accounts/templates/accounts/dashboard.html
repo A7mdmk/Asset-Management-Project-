@@ -1,0 +1,200 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .logout {
+            border: 1px solid white;
+            background: transparent;
+            color: white;
+            padding: 9px 18px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        main {
+            max-width: 1100px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .welcome {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        .welcome h2 {
+            color: #17365d;
+        }
+
+        .role {
+            color: #52708e;
+            font-weight: bold;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(230px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 3px 12px #0000000a;
+            border-top: 4px solid #17365d;
+        }
+
+        .card h3 {
+            color: #17365d;
+            margin-top: 0;
+        }
+
+        .card p {
+            line-height: 1.6;
+            color: #627083;
+        }
+
+        .pending {
+            display: inline-block;
+            padding: 7px 12px;
+            background: #eef1f5;
+            border-radius: 5px;
+            color: #536175;
+            font-size: 13px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 30px;
+            color: #758297;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+
+    <form method="post" action="{% url 'logout' %}">
+        {% csrf_token %}
+        <button class="logout" type="submit">
+            Logout
+        </button>
+    </form>
+</header>
+
+<main>
+
+    <section class="welcome">
+        <h2>Welcome, {{ user.username }}!</h2>
+
+        <p>
+            Intelligent Campus Resource Exchange
+            and Asset Management System
+        </p>
+
+        <p class="role">
+            Your role: {{ role_text }}
+        </p>
+    </section>
+
+    <section class="grid">
+
+        <div class="card">
+            <h3>Browse Assets</h3>
+            <p>
+                Search and explore available campus
+                resources.
+            </p>
+            <span class="pending">Coming soon</span>
+        </div>
+
+        {% if is_requester %}
+        <div class="card">
+            <h3>My Requests</h3>
+            <p>
+                Submit resource requests and
+                track their progress.
+            </p>
+            <span class="pending">Coming soon</span>
+        </div>
+        {% endif %}
+
+        {% if is_custodian %}
+        <div class="card">
+            <h3>Asset Management</h3>
+            <p>
+                Register assets and manage
+                department resources.
+            </p>
+            <span class="pending">Coming soon</span>
+        </div>
+        {% endif %}
+
+        {% if is_approver %}
+        <div class="card">
+            <h3>Approvals</h3>
+            <p>
+                Review and manage pending
+                resource approvals.
+            </p>
+            <span class="pending">Coming soon</span>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <h3>Notifications</h3>
+            <p>
+                View updates about asset requests
+                and transfers.
+            </p>
+            <span class="pending">Coming soon</span>
+        </div>
+
+    </section>
+
+</main>
+
+<footer>
+    KU ResourceSavers | COSC 336 | Group 7
+</footer>
+
+</body>
+</html>
