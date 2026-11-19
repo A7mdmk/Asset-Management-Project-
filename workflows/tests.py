@@ -1,8 +1,12 @@
 
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 
 from assets.models import Asset, Category, Department
 from assets.services import register_asset
@@ -180,6 +184,7 @@ class SubmitRequestTests(TestCase):
             ResourceRequest.objects.count(), 0
         )
 
+
 class ApprovalWorkflowTests(SubmitRequestTests):
 
     def setUp(self):
@@ -202,7 +207,6 @@ class ApprovalWorkflowTests(SubmitRequestTests):
             quantity=2,
             reason="University project",
         )
-    
 
         result = decide_request(
             approver=self.approver,
@@ -216,7 +220,6 @@ class ApprovalWorkflowTests(SubmitRequestTests):
         )
 
         self.asset.stock.refresh_from_db()
-
         self.assertEqual(self.asset.stock.free, 3)
         self.assertEqual(self.asset.stock.held, 2)
         self.assertEqual(self.asset.stock.total, 5)
@@ -340,3 +343,64 @@ class ApprovalWorkflowTests(SubmitRequestTests):
         self.assertEqual(self.asset.stock.held, 4)
         self.assertEqual(self.asset.stock.total, 5)
         self.assertEqual(RequestApproval.objects.count(), 1)
+
+    def test_expired_request_cannot_be_approved(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            quantity=2,
+            reason="Testing expiration",
+        )
+
+        resource_request.expires_at = (
+            timezone.now() - timedelta(minutes=1)
+        )
+        resource_request.save(update_fields=["expires_at"])
+
+        result = decide_request(
+            approver=self.approver,
+            request_id=resource_request.pk,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        self.assertEqual(
+            result.status,
+            ResourceRequest.Status.EXPIRED
+        )
+
+        resource_request.refresh_from_db()
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.EXPIRED
+        )
+
+        self.asset.stock.refresh_from_db()
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(RequestApproval.objects.count(), 0)
+
+    def test_expiration_command_expires_overdue_requests(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            quantity=2,
+            reason="Testing expiration command",
+        )
+
+        resource_request.expires_at = (
+            timezone.now() - timedelta(minutes=1)
+        )
+        resource_request.save(update_fields=["expires_at"])
+
+        call_command("expire_requests", verbosity=0)
+
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.EXPIRED
+        )
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(RequestApproval.objects.count(), 0)

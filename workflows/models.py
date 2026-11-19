@@ -1,10 +1,17 @@
 
+from datetime import timedelta
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 from assets.models import Asset
+
+
+def default_request_expiry():
+    return timezone.now() + timedelta(hours=48)
 
 
 class ResourceRequest(models.Model):
@@ -43,6 +50,10 @@ class ResourceRequest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    expires_at = models.DateTimeField(
+        default=default_request_expiry
+    )
+
     def clean(self):
         super().clean()
 
@@ -60,10 +71,7 @@ class ResourceRequest(models.Model):
                 "Requested quantity exceeds the asset's total quantity."
             )
 
-        if (
-            self.requester_id
-            and not self.requester.is_active
-        ):
+        if self.requester_id and not self.requester.is_active:
             errors["requester"] = "Requester must be active."
 
         if errors:
@@ -74,6 +82,7 @@ class ResourceRequest(models.Model):
             f"Request #{self.pk}: "
             f"{self.asset.name} ({self.status})"
         )
+
 
 class RequestApproval(models.Model):
 

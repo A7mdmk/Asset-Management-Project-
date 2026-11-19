@@ -1,8 +1,9 @@
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 
-from assets.models import Asset
+from assets.models import Asset, StockBalance
 from .models import ResourceRequest, RequestApproval
 
 
@@ -40,7 +41,9 @@ def submit_request(*, requester, asset_id, quantity, reason):
                 "Individual assets can only be requested one at a time."
             )
 
-    if asset.stock.free < quantity:
+    stock = StockBalance.objects.select_for_update().get(asset=asset)
+
+    if stock.free < quantity:
         raise ValidationError("Not enough free stock is available.")
 
     resource_request = ResourceRequest(
@@ -54,6 +57,7 @@ def submit_request(*, requester, asset_id, quantity, reason):
     resource_request.save()
 
     return resource_request
+
 
 @transaction.atomic
 def decide_request(*, approver, request_id, decision, comment=""):
@@ -81,6 +85,12 @@ def decide_request(*, approver, request_id, decision, comment=""):
     if resource_request.status != ResourceRequest.Status.PENDING:
         raise ValidationError("Only pending requests can be decided.")
 
+    # Expire overdue requests before any approval or stock changes.
+    if resource_request.expires_at <= timezone.now():
+        resource_request.status = ResourceRequest.Status.EXPIRED
+        resource_request.save(update_fields=["status", "updated_at"])
+        return resource_request
+
     if resource_request.requester_id == approver.pk:
         raise ValidationError("You cannot approve your own request.")
 
@@ -88,10 +98,24 @@ def decide_request(*, approver, request_id, decision, comment=""):
         raise ValidationError("This request already has a decision.")
 
     if decision == RequestApproval.Decision.APPROVED:
-        stock = (
-            resource_request.asset.stock.__class__.objects
-            .select_for_update()
-            .get(asset_id=resource_request.asset_id)
+        asset = Asset.objects.select_for_update().get(
+            pk=resource_request.asset_id
+        )
+
+        if asset.publication != Asset.Publication.PUBLISHED:
+            raise ValidationError("The asset is no longer published.")
+
+        if asset.lifecycle != Asset.Lifecycle.ACTIVE:
+            raise ValidationError("The asset is no longer active.")
+
+        if asset.condition not in (
+            Asset.Condition.GOOD,
+            Asset.Condition.FAIR,
+        ):
+            raise ValidationError("The asset is no longer eligible.")
+
+        stock = StockBalance.objects.select_for_update().get(
+            asset=asset
         )
 
         if stock.free < resource_request.quantity:
