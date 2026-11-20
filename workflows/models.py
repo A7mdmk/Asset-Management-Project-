@@ -236,3 +236,78 @@ class Reservation(models.Model):
             f"Reservation #{self.pk} - "
             f"Request #{self.request_id} ({self.status})"
         )
+
+class Transfer(models.Model):
+
+    class Status(models.TextChoices):
+        ARRANGED = "Arranged", "Arranged"
+        DISPATCHED = "Dispatched", "Dispatched"
+        RECEIVED = "Received", "Received"
+        DISPUTED = "Disputed", "Disputed"
+        CANCELLED = "Cancelled", "Cancelled"
+
+    reservation = models.OneToOneField(
+        Reservation,
+        on_delete=models.PROTECT,
+        related_name="transfer",
+    )
+
+    arranged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="arranged_transfers",
+    )
+
+    quantity = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)]
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.ARRANGED,
+    )
+
+    arranged_at = models.DateTimeField(
+        default=timezone.now
+    )
+
+    dispatched_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    received_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    dispute_reason = models.TextField(blank=True)
+    cancellation_reason = models.TextField(blank=True)
+
+    def clean(self):
+        super().clean()
+
+        errors = {}
+
+        if self.reservation_id:
+            if self.quantity != self.reservation.quantity:
+                errors["quantity"] = (
+                    "Transfer quantity must match "
+                    "the reservation quantity."
+                )
+
+        if self.arranged_by_id and not self.arranged_by.is_active:
+            errors["arranged_by"] = (
+                "The arranging user must be active."
+            )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return (
+            f"Transfer #{self.pk} - "
+            f"Reservation #{self.reservation_id} "
+            f"({self.status})"
+        )

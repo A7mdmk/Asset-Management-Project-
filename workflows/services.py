@@ -6,7 +6,7 @@ from django.utils import timezone
 from accounts.models import DepartmentApprover
 from assets.models import Asset, Department, StockBalance
 
-from .models import ResourceRequest, RequestApproval, Reservation
+from .models import ResourceRequest, RequestApproval, Reservation, Transfer
 
 
 @transaction.atomic
@@ -447,3 +447,87 @@ def cancel_approved_reservation(
     )
 
     return reservation
+
+@transaction.atomic
+def arrange_transfer(*, actor, reservation_id):
+    if not actor.is_authenticated or not actor.is_active:
+        raise ValidationError("An active account is required.")
+
+    # Read the reservation reference to find the request.
+    reservation_reference = Reservation.objects.get(
+        pk=reservation_id
+    )
+
+    # Lock in the same order used by the reservation workflow.
+    resource_request = (
+        ResourceRequest.objects.select_for_update()
+        .get(pk=reservation_reference.request_id)
+    )
+
+    asset = (
+        Asset.objects.select_for_update()
+        .get(pk=resource_request.asset_id)
+    )
+
+    reservation = (
+        Reservation.objects.select_for_update()
+        .get(pk=reservation_id)
+    )
+
+    if reservation.request_id != resource_request.pk:
+        raise ValidationError("Reservation request mismatch.")
+
+    # Only the assigned source custodian can arrange a transfer.
+    if asset.custodian_id != actor.pk:
+        raise ValidationError(
+            "Only the assigned source custodian "
+            "can arrange this transfer."
+        )
+
+    if not actor.groups.filter(name="Custodian").exists():
+        raise ValidationError(
+            "The source custodian role is required."
+        )
+
+    if resource_request.status != ResourceRequest.Status.APPROVED:
+        raise ValidationError(
+            "The resource request must be approved."
+        )
+
+    if reservation.status != Reservation.Status.APPROVED:
+        raise ValidationError(
+            "Only approved reservations can be converted."
+        )
+
+    if Transfer.objects.filter(reservation=reservation).exists():
+        raise ValidationError(
+            "A transfer already exists for this reservation."
+        )
+
+    stock = (
+        StockBalance.objects.select_for_update()
+        .get(asset=asset)
+    )
+
+    if stock.held < reservation.quantity:
+        raise ValidationError(
+            "Insufficient held stock for the transfer."
+        )
+
+    # Create the transfer without changing stock.
+    transfer = Transfer(
+        reservation=reservation,
+        arranged_by=actor,
+        quantity=reservation.quantity,
+        status=Transfer.Status.ARRANGED,
+    )
+
+    transfer.full_clean()
+    transfer.save()
+
+    # Mark the reservation as converted.
+    reservation.status = Reservation.Status.CONVERTED
+    reservation.full_clean()
+    reservation.save(update_fields=["status"])
+
+    return transfer

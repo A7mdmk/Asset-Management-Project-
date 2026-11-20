@@ -11,12 +11,13 @@ from accounts.models import DepartmentApprover
 from assets.models import Asset, Category, Department
 from assets.services import register_asset
 
-from .models import ResourceRequest, RequestApproval, Reservation
+from .models import ResourceRequest, RequestApproval, Reservation, Transfer
 from .services import (
     submit_request,
     decide_request,
     cancel_pending_request,
     cancel_approved_reservation,
+    arrange_transfer,
 )
 
 
@@ -1447,3 +1448,332 @@ class ApprovalWorkflowTests(SubmitRequestTests):
         self.assertEqual(self.asset.stock.held, 2)
         self.assertEqual(self.asset.stock.blocked, 0)
         self.assertEqual(self.asset.stock.total, 5)
+
+    def test_arrange_transfer_preserves_held_stock(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing transfer creation",
+        )
+
+        # Stage 1: Destination approval.
+        decide_request(
+            approver=self.approver,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.DESTINATION,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        # Stage 2: Source approval creates the reservation.
+        decide_request(
+            approver=self.custodian,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.SOURCE,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        reservation = Reservation.objects.get(
+            request=resource_request
+        )
+
+        self.asset.stock.refresh_from_db()
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+
+        # Source custodian arranges the transfer.
+        transfer = arrange_transfer(
+            actor=self.custodian,
+            reservation_id=reservation.pk,
+        )
+
+        reservation.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.ARRANGED,
+        )
+
+        self.assertEqual(transfer.quantity, 2)
+        self.assertEqual(transfer.arranged_by, self.custodian)
+        self.assertEqual(transfer.reservation, reservation)
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.CONVERTED,
+        )
+
+        # Transfer creation must NOT move stock again.
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.in_transit, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+        # Exactly one transfer exists.
+        self.assertEqual(
+            Transfer.objects.filter(
+                reservation=reservation
+            ).count(),
+            1,
+        )
+
+    # ==========================================================
+    # TRANSFER CREATION TEST HELPERS
+    # ==========================================================
+
+    def _create_approved_reservation_for_transfer(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing transfer workflow",
+        )
+
+        decide_request(
+            approver=self.approver,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.DESTINATION,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        decide_request(
+            approver=self.custodian,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.SOURCE,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        return Reservation.objects.get(
+            request=resource_request
+        )
+
+    # ==========================================================
+    # TEST 1: UNAUTHORIZED USER
+    # ==========================================================
+
+    def test_unauthorized_user_cannot_arrange_transfer(self):
+        reservation = (
+            self._create_approved_reservation_for_transfer()
+        )
+
+        with self.assertRaises(ValidationError):
+            arrange_transfer(
+                actor=self.requester,
+                reservation_id=reservation.pk,
+            )
+
+        reservation.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.APPROVED,
+        )
+        self.assertEqual(Transfer.objects.count(), 0)
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+
+    # ==========================================================
+    # TEST 2: DUPLICATE TRANSFER
+    # ==========================================================
+
+    def test_cannot_arrange_same_reservation_twice(self):
+        reservation = (
+            self._create_approved_reservation_for_transfer()
+        )
+
+        arrange_transfer(
+            actor=self.custodian,
+            reservation_id=reservation.pk,
+        )
+
+        with self.assertRaises(ValidationError):
+            arrange_transfer(
+                actor=self.custodian,
+                reservation_id=reservation.pk,
+            )
+
+        reservation.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            Transfer.objects.filter(
+                reservation=reservation
+            ).count(),
+            1,
+        )
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.CONVERTED,
+        )
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+
+    # ==========================================================
+    # TEST 3: CANCELLED RESERVATION
+    # ==========================================================
+
+    def test_cancelled_reservation_cannot_be_transferred(self):
+        reservation = (
+            self._create_approved_reservation_for_transfer()
+        )
+
+        cancel_approved_reservation(
+            actor=self.requester,
+            reservation_id=reservation.pk,
+            reason="No longer required",
+        )
+
+        with self.assertRaises(ValidationError):
+            arrange_transfer(
+                actor=self.custodian,
+                reservation_id=reservation.pk,
+            )
+
+        reservation.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.CANCELLED,
+        )
+        self.assertEqual(Transfer.objects.count(), 0)
+
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+
+    # ==========================================================
+    # TEST 4: CUSTODIAN ROLE REQUIRED
+    # ==========================================================
+
+    def test_transfer_requires_custodian_role(self):
+        reservation = (
+            self._create_approved_reservation_for_transfer()
+        )
+
+        self.custodian.groups.clear()
+
+        with self.assertRaises(ValidationError):
+            arrange_transfer(
+                actor=self.custodian,
+                reservation_id=reservation.pk,
+            )
+
+        reservation.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.APPROVED,
+        )
+        self.assertEqual(Transfer.objects.count(), 0)
+        self.assertEqual(self.asset.stock.held, 2)
+
+    # ==========================================================
+    # TEST 5: INSUFFICIENT HELD STOCK
+    # ==========================================================
+
+    def test_transfer_requires_sufficient_held_stock(self):
+        reservation = (
+            self._create_approved_reservation_for_transfer()
+        )
+
+        stock = self.asset.stock
+        stock.refresh_from_db()
+
+        # Simulate another operation incorrectly moving
+        # one held unit back into free stock.
+        stock.held = 1
+        stock.free = 4
+        stock.save(update_fields=["held", "free"])
+
+        with self.assertRaises(ValidationError):
+            arrange_transfer(
+                actor=self.custodian,
+                reservation_id=reservation.pk,
+            )
+
+        reservation.refresh_from_db()
+        stock.refresh_from_db()
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.APPROVED,
+        )
+        self.assertEqual(Transfer.objects.count(), 0)
+        self.assertEqual(stock.free, 4)
+        self.assertEqual(stock.held, 1)
+        self.assertEqual(stock.total, 5)
+
+    # ==========================================================
+    # TEST 6: TRANSACTION ROLLBACK
+    # ==========================================================
+
+    def test_transfer_creation_failure_rolls_back(self):
+        from unittest.mock import patch
+
+        reservation = (
+            self._create_approved_reservation_for_transfer()
+        )
+
+        # Simulate a failure while updating the reservation,
+        # after the transfer record has been saved.
+        with patch.object(
+            Reservation,
+            "save",
+            side_effect=RuntimeError("Simulated save failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                arrange_transfer(
+                    actor=self.custodian,
+                    reservation_id=reservation.pk,
+                )
+
+        reservation.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        # Database transaction must remove the transfer.
+        self.assertEqual(Transfer.objects.count(), 0)
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.APPROVED,
+        )
+
+        # Stock must remain unchanged.
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.in_transit, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # ==========================================================
+    # TEST 7: INACTIVE USER
+    # ==========================================================
+
+    def test_inactive_custodian_cannot_arrange_transfer(self):
+        reservation = (
+            self._create_approved_reservation_for_transfer()
+        )
+
+        self.custodian.is_active = False
+        self.custodian.save(update_fields=["is_active"])
+
+        with self.assertRaises(ValidationError):
+            arrange_transfer(
+                actor=self.custodian,
+                reservation_id=reservation.pk,
+            )
+
+        reservation.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(Transfer.objects.count(), 0)
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.APPROVED,
+        )
+        self.assertEqual(self.asset.stock.held, 2)
