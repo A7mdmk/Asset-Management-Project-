@@ -149,14 +149,20 @@
     </a>
 </div>
 
-        <div class="card">
-            <h3>Browse Assets</h3>
-            <p>
-                Search and explore available campus
-                resources.
-            </p>
-            <span class="pending">Coming soon</span>
-        </div>
+
+<div class="card">
+    <h3>Browse Assets</h3>
+
+    <p>
+        Search and explore available campus
+        resources.
+    </p>
+
+    <a href="{% url 'asset_catalog' %}">
+        Browse Campus Assets
+    </a>
+</div>
+
 
         {% if is_requester %}
         <div class="card">
