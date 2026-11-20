@@ -19,6 +19,7 @@ from .services import (
     cancel_approved_reservation,
     arrange_transfer,
     dispatch_transfer,
+    confirm_transfer_receipt,
 )
 
 
@@ -1975,6 +1976,298 @@ class ApprovalWorkflowTests(SubmitRequestTests):
             2,
         )
 
+        self.assertEqual(
+            Transfer.objects.filter(
+                reservation=reservation
+            ).count(),
+            1,
+        )
+
+    # ==========================================================
+    # TRANSFER RECEIPT TESTS
+    # ==========================================================
+
+    def _create_dispatched_transfer_for_receipt(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        dispatch_transfer(
+            actor=self.custodian,
+            transfer_id=transfer.pk,
+        )
+
+        transfer.refresh_from_db()
+        return transfer
+
+    # TEST 1: SUCCESSFUL RECEIPT
+
+    def test_receipt_moves_in_transit_stock_to_in_use(self):
+        transfer = self._create_dispatched_transfer_for_receipt()
+
+        result = confirm_transfer_receipt(
+            actor=self.approver,
+            transfer_id=transfer.pk,
+        )
+
+        result.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            result.status,
+            Transfer.Status.RECEIVED,
+        )
+        self.assertEqual(result.received_by, self.approver)
+        self.assertIsNotNone(result.received_at)
+        self.assertIsNotNone(result.dispatched_at)
+
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.in_transit, 0)
+        self.assertEqual(self.asset.stock.in_use, 2)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # TEST 2: UNAUTHORIZED USER
+
+    def test_unauthorized_user_cannot_confirm_receipt(self):
+        transfer = self._create_dispatched_transfer_for_receipt()
+
+        with self.assertRaises(ValidationError):
+            confirm_transfer_receipt(
+                actor=self.requester,
+                transfer_id=transfer.pk,
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.DISPATCHED,
+        )
+        self.assertIsNone(transfer.received_by)
+        self.assertIsNone(transfer.received_at)
+        self.assertEqual(self.asset.stock.in_transit, 2)
+        self.assertEqual(self.asset.stock.in_use, 0)
+
+    # TEST 3: DUPLICATE RECEIPT
+
+    def test_cannot_confirm_same_receipt_twice(self):
+        transfer = self._create_dispatched_transfer_for_receipt()
+
+        confirm_transfer_receipt(
+            actor=self.approver,
+            transfer_id=transfer.pk,
+        )
+
+        with self.assertRaises(ValidationError):
+            confirm_transfer_receipt(
+                actor=self.approver,
+                transfer_id=transfer.pk,
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.RECEIVED,
+        )
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.in_transit, 0)
+        self.assertEqual(self.asset.stock.in_use, 2)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # TEST 4: RECEIPT BEFORE DISPATCH
+
+    def test_cannot_receive_arranged_transfer(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        with self.assertRaises(ValidationError):
+            confirm_transfer_receipt(
+                actor=self.approver,
+                transfer_id=transfer.pk,
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.ARRANGED,
+        )
+        self.assertIsNone(transfer.received_at)
+
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.in_transit, 0)
+        self.assertEqual(self.asset.stock.in_use, 0)
+
+    # TEST 5: DESTINATION APPROVER ROLE REQUIRED
+
+    def test_receipt_requires_destination_approver_role(self):
+        transfer = self._create_dispatched_transfer_for_receipt()
+
+        self.approver.groups.clear()
+
+        with self.assertRaises(ValidationError):
+            confirm_transfer_receipt(
+                actor=self.approver,
+                transfer_id=transfer.pk,
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.DISPATCHED,
+        )
+        self.assertEqual(self.asset.stock.in_transit, 2)
+        self.assertEqual(self.asset.stock.in_use, 0)
+
+    # TEST 6: DESTINATION DEPARTMENT AUTHORIZATION
+
+    def test_receipt_requires_department_authorization(self):
+        transfer = self._create_dispatched_transfer_for_receipt()
+
+        DepartmentApprover.objects.filter(
+            user=self.approver,
+            department=self.department,
+        ).update(is_active=False)
+
+        with self.assertRaises(ValidationError):
+            confirm_transfer_receipt(
+                actor=self.approver,
+                transfer_id=transfer.pk,
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.DISPATCHED,
+        )
+        self.assertEqual(self.asset.stock.in_transit, 2)
+        self.assertEqual(self.asset.stock.in_use, 0)
+
+    # TEST 7: INACTIVE APPROVER
+
+    def test_inactive_approver_cannot_confirm_receipt(self):
+        transfer = self._create_dispatched_transfer_for_receipt()
+
+        self.approver.is_active = False
+        self.approver.save(update_fields=["is_active"])
+
+        with self.assertRaises(ValidationError):
+            confirm_transfer_receipt(
+                actor=self.approver,
+                transfer_id=transfer.pk,
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.DISPATCHED,
+        )
+        self.assertIsNone(transfer.received_by)
+        self.assertEqual(self.asset.stock.in_transit, 2)
+        self.assertEqual(self.asset.stock.in_use, 0)
+
+    # TEST 8: INSUFFICIENT IN-TRANSIT STOCK
+
+    def test_receipt_rejects_insufficient_in_transit_stock(self):
+        transfer = self._create_dispatched_transfer_for_receipt()
+
+        stock = self.asset.stock
+        stock.refresh_from_db()
+
+        # Simulate inconsistent stock.
+        stock.in_transit = 1
+        stock.free = 4
+        stock.save(update_fields=["in_transit", "free"])
+
+        with self.assertRaises(ValidationError):
+            confirm_transfer_receipt(
+                actor=self.approver,
+                transfer_id=transfer.pk,
+            )
+
+        transfer.refresh_from_db()
+        stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.DISPATCHED,
+        )
+        self.assertIsNone(transfer.received_at)
+        self.assertEqual(stock.free, 4)
+        self.assertEqual(stock.in_transit, 1)
+        self.assertEqual(stock.in_use, 0)
+        self.assertEqual(stock.total, 5)
+
+    # TEST 9: TRANSACTION ROLLBACK
+
+    def test_receipt_failure_rolls_back_stock(self):
+        transfer = self._create_dispatched_transfer_for_receipt()
+
+        with patch.object(
+            Transfer,
+            "save",
+            side_effect=RuntimeError("Simulated receipt save failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                confirm_transfer_receipt(
+                    actor=self.approver,
+                    transfer_id=transfer.pk,
+                )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.DISPATCHED,
+        )
+        self.assertIsNone(transfer.received_by)
+        self.assertIsNone(transfer.received_at)
+
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.in_transit, 2)
+        self.assertEqual(self.asset.stock.in_use, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # TEST 10: PRESERVE RESERVATION AND APPROVAL HISTORY
+
+    def test_receipt_preserves_reservation_and_approvals(self):
+        transfer = self._create_dispatched_transfer_for_receipt()
+
+        confirm_transfer_receipt(
+            actor=self.approver,
+            transfer_id=transfer.pk,
+        )
+
+        reservation = transfer.reservation
+        reservation.refresh_from_db()
+
+        resource_request = reservation.request
+        resource_request.refresh_from_db()
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.CONVERTED,
+        )
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.APPROVED,
+        )
+        self.assertEqual(
+            RequestApproval.objects.filter(
+                request=resource_request
+            ).count(),
+            2,
+        )
         self.assertEqual(
             Transfer.objects.filter(
                 reservation=reservation
