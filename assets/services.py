@@ -7,6 +7,8 @@ from .models import (
     AssetSpecification,
     AssetAttachment,
     AssetMaintenance,
+    AssetInspection,
+    AssetDisposition,
 )
 from django.utils import timezone
 from pathlib import Path
@@ -926,3 +928,584 @@ def validate_maintenance_stock_integrity(
     stock.full_clean()
 
     return active_maintenance_quantity
+
+# ==========================================================
+# ASSET INSPECTION MANAGEMENT
+# ==========================================================
+
+@transaction.atomic
+def request_asset_inspection(
+    *,
+    actor,
+    asset_id,
+    quantity=1,
+):
+    """
+    Create a pending asset inspection.
+
+    Only the assigned custodian or an authorized
+    superuser can request an inspection.
+
+    Requesting an inspection does not move stock.
+    """
+
+    asset = Asset.objects.select_for_update().get(
+        pk=asset_id
+    )
+
+    validate_asset_metadata_permission(
+        actor=actor,
+        asset=asset,
+    )
+
+    if asset.lifecycle != Asset.Lifecycle.ACTIVE:
+        raise ValidationError(
+            "Only active assets can be inspected."
+        )
+
+    if not isinstance(quantity, int) or isinstance(
+        quantity, bool
+    ):
+        raise ValidationError(
+            "Inspection quantity must be a whole number."
+        )
+
+    if quantity < 1:
+        raise ValidationError(
+            "Inspection quantity must be at least 1."
+        )
+
+    if quantity > asset.quantity:
+        raise ValidationError(
+            "Inspection quantity exceeds asset quantity."
+        )
+
+    if (
+        asset.tracking_mode == Asset.TrackingMode.INDIVIDUAL
+        and quantity != 1
+    ):
+        raise ValidationError(
+            "Individual assets require inspection quantity 1."
+        )
+
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
+
+    stock.full_clean()
+
+    # A request does not reserve or move stock.
+    # Stock eligibility will be checked again
+    # before any disposition is executed.
+
+    inspection = AssetInspection(
+        asset=asset,
+        requested_by=actor,
+        quantity=quantity,
+        status=AssetInspection.Status.PENDING,
+    )
+
+    inspection.full_clean()
+    inspection.save()
+
+    return inspection
+
+# ==========================================================
+# COMPLETE ASSET INSPECTION
+# ==========================================================
+
+@transaction.atomic
+def complete_asset_inspection(
+    *,
+    actor,
+    inspection_id,
+    findings,
+    recommendation,
+):
+    """
+    Complete a pending asset inspection.
+
+    Records findings and a recommendation.
+
+    Does not modify stock, condition,
+    lifecycle, reservations, or transfers.
+    """
+
+    # Find the parent asset before acquiring locks.
+    inspection_reference = AssetInspection.objects.get(
+        pk=inspection_id
+    )
+
+    # Lock the asset first, following the
+    # existing asset workflow lock order.
+    asset = Asset.objects.select_for_update().get(
+        pk=inspection_reference.asset_id
+    )
+
+    validate_asset_metadata_permission(
+        actor=actor,
+        asset=asset,
+    )
+
+    inspection = (
+        AssetInspection.objects.select_for_update()
+        .get(
+            pk=inspection_id,
+            asset_id=asset.pk,
+        )
+    )
+
+    if inspection.status != AssetInspection.Status.PENDING:
+        raise ValidationError(
+            "Only pending inspections can be completed."
+        )
+
+    if not isinstance(findings, str) or not findings.strip():
+        raise ValidationError(
+            "Inspection findings are required."
+        )
+
+    valid_recommendations = {
+        choice.value
+        for choice in AssetInspection.Recommendation
+    }
+
+    if recommendation not in valid_recommendations:
+        raise ValidationError(
+            "Invalid inspection recommendation."
+        )
+
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
+
+    stock.full_clean()
+
+    inspection.status = AssetInspection.Status.COMPLETED
+    inspection.inspected_by = actor
+    inspection.findings = findings.strip()
+    inspection.recommendation = recommendation
+    inspection.inspected_at = timezone.now()
+
+    inspection.full_clean()
+    inspection.save(
+        update_fields=[
+            "status",
+            "inspected_by",
+            "findings",
+            "recommendation",
+            "inspected_at",
+        ]
+    )
+
+    return inspection
+
+# ==========================================================
+# CANCEL ASSET INSPECTION
+# ==========================================================
+
+@transaction.atomic
+def cancel_asset_inspection(*, actor, inspection_id):
+    """
+    Cancel a pending asset inspection.
+
+    Pending -> Cancelled
+
+    Does not change stock, lifecycle,
+    reservations, or transfers.
+    """
+
+    # Locate the parent asset before acquiring locks.
+    inspection_reference = AssetInspection.objects.get(
+        pk=inspection_id
+    )
+
+    # Lock the asset first, consistent with
+    # other inspection and maintenance operations.
+    asset = Asset.objects.select_for_update().get(
+        pk=inspection_reference.asset_id
+    )
+
+    validate_asset_metadata_permission(
+        actor=actor,
+        asset=asset,
+    )
+
+    inspection = (
+        AssetInspection.objects.select_for_update()
+        .get(
+            pk=inspection_id,
+            asset_id=asset.pk,
+        )
+    )
+
+    if inspection.status != AssetInspection.Status.PENDING:
+        raise ValidationError(
+            "Only pending inspections can be cancelled."
+        )
+
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
+
+    stock.full_clean()
+
+    inspection.status = AssetInspection.Status.CANCELLED
+
+    inspection.full_clean()
+    inspection.save(
+        update_fields=["status"]
+    )
+
+    return inspection
+
+# ==========================================================
+# REQUEST ASSET DISPOSITION
+# ==========================================================
+
+@transaction.atomic
+def request_asset_disposition(
+    *,
+    actor,
+    inspection_id,
+    disposition_type,
+    reason,
+):
+    """
+    Request disposition following a completed inspection.
+
+    Does not modify stock or asset lifecycle.
+    """
+
+    inspection_reference = AssetInspection.objects.get(
+        pk=inspection_id
+    )
+
+    asset = Asset.objects.select_for_update().get(
+        pk=inspection_reference.asset_id
+    )
+
+    validate_asset_metadata_permission(
+        actor=actor,
+        asset=asset,
+    )
+
+    inspection = (
+        AssetInspection.objects.select_for_update()
+        .get(
+            pk=inspection_id,
+            asset_id=asset.pk,
+        )
+    )
+
+    if inspection.status != AssetInspection.Status.COMPLETED:
+        raise ValidationError(
+            "Disposition requires a completed inspection."
+        )
+
+    recommendation_mapping = {
+        AssetInspection.Recommendation.RETIRE:
+            AssetDisposition.DispositionType.RETIRED,
+
+        AssetInspection.Recommendation.DONATE:
+            AssetDisposition.DispositionType.DONATED,
+
+        AssetInspection.Recommendation.RECYCLE:
+            AssetDisposition.DispositionType.RECYCLED,
+
+        AssetInspection.Recommendation.DISPOSE:
+            AssetDisposition.DispositionType.DISPOSED,
+    }
+
+    expected_type = recommendation_mapping.get(
+        inspection.recommendation
+    )
+
+    if (
+        expected_type is None
+        or disposition_type != expected_type
+    ):
+        raise ValidationError(
+            "Disposition type must match the "
+            "completed inspection recommendation."
+        )
+
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValidationError(
+            "A disposition reason is required."
+        )
+
+    if asset.lifecycle != Asset.Lifecycle.ACTIVE:
+        raise ValidationError(
+            "Only active assets can enter disposition."
+        )
+
+    # Prevent multiple dispositions for one inspection.
+    if inspection.dispositions.exists():
+        raise ValidationError(
+            "A disposition already exists for this inspection."
+        )
+
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
+
+    stock.full_clean()
+
+    # This request does not reserve stock.
+    # Eligibility and maintenance constraints
+    # are checked during disposition execution.
+
+    disposition = AssetDisposition(
+        asset=asset,
+        inspection=inspection,
+        requested_by=actor,
+        disposition_type=disposition_type,
+        quantity=inspection.quantity,
+        status=AssetDisposition.Status.PENDING,
+        reason=reason.strip(),
+    )
+
+    disposition.full_clean()
+    disposition.save()
+
+    return disposition
+
+# ==========================================================
+# EXECUTE ASSET DISPOSITION
+# ==========================================================
+
+@transaction.atomic
+def execute_asset_disposition(
+    *,
+    actor,
+    disposition_id,
+    completion_notes,
+):
+    """
+    Complete an approved inspection-based disposition.
+
+    Move affected stock:
+        Free -> Retired
+
+    Held, InTransit, InUse, and Blocked stock
+    must remain untouched.
+
+    For partial lot dispositions, keep the
+    overall asset lifecycle Active.
+    """
+
+    disposition_reference = AssetDisposition.objects.get(
+        pk=disposition_id
+    )
+
+    # Lock the parent asset first.
+    asset = Asset.objects.select_for_update().get(
+        pk=disposition_reference.asset_id
+    )
+
+    validate_asset_metadata_permission(
+        actor=actor,
+        asset=asset,
+    )
+
+    disposition = (
+        AssetDisposition.objects.select_for_update()
+        .select_related("inspection")
+        .get(
+            pk=disposition_id,
+            asset_id=asset.pk,
+        )
+    )
+
+    if disposition.status != AssetDisposition.Status.PENDING:
+        raise ValidationError(
+            "Only pending dispositions can be executed."
+        )
+
+    if not isinstance(completion_notes, str):
+        raise ValidationError(
+            "Completion notes must be text."
+        )
+
+    if not completion_notes.strip():
+        raise ValidationError(
+            "Disposition completion notes are required."
+        )
+
+    if asset.lifecycle != Asset.Lifecycle.ACTIVE:
+        raise ValidationError(
+            "Only active assets can undergo disposition."
+        )
+
+    inspection = disposition.inspection
+
+    if inspection.status != AssetInspection.Status.COMPLETED:
+        raise ValidationError(
+            "A completed inspection is required."
+        )
+
+    recommendation_mapping = {
+        AssetInspection.Recommendation.RETIRE:
+            AssetDisposition.DispositionType.RETIRED,
+
+        AssetInspection.Recommendation.DONATE:
+            AssetDisposition.DispositionType.DONATED,
+
+        AssetInspection.Recommendation.RECYCLE:
+            AssetDisposition.DispositionType.RECYCLED,
+
+        AssetInspection.Recommendation.DISPOSE:
+            AssetDisposition.DispositionType.DISPOSED,
+    }
+
+    if (
+        recommendation_mapping.get(inspection.recommendation)
+        != disposition.disposition_type
+    ):
+        raise ValidationError(
+            "Disposition no longer matches "
+            "the inspection recommendation."
+        )
+
+    if disposition.quantity != inspection.quantity:
+        raise ValidationError(
+            "Disposition quantity must match "
+            "the inspected quantity."
+        )
+
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
+
+    stock.full_clean()
+
+    # Existing maintenance and transfer stock
+    # cannot be used for disposition.
+    if stock.free < disposition.quantity:
+        raise ValidationError(
+            "Insufficient free stock for disposition."
+        )
+
+    # Preserve all existing blocked, held,
+    # in-transit, and in-use balances.
+    stock.free -= disposition.quantity
+    stock.retired += disposition.quantity
+
+    stock.full_clean()
+    stock.save(
+        update_fields=[
+            "free",
+            "retired",
+            "updated_at",
+        ]
+    )
+
+    disposition.status = AssetDisposition.Status.COMPLETED
+    disposition.completed_by = actor
+    disposition.completion_notes = completion_notes.strip()
+    disposition.completed_at = timezone.now()
+
+    disposition.full_clean()
+    disposition.save(
+        update_fields=[
+            "status",
+            "completed_by",
+            "completion_notes",
+            "completed_at",
+        ]
+    )
+
+    # Only update the asset-wide lifecycle when
+    # every unit is in the retired stock bucket.
+    # Partial lots remain Active.
+    if stock.retired == asset.quantity:
+        asset.lifecycle = disposition.disposition_type
+        asset.publication = Asset.Publication.WITHDRAWN
+
+        asset.full_clean()
+        asset.save(
+            update_fields=[
+                "lifecycle",
+                "publication",
+                "updated_at",
+            ]
+        )
+
+    return disposition
+
+# ==========================================================
+# CANCEL ASSET DISPOSITION
+# ==========================================================
+
+@transaction.atomic
+def cancel_asset_disposition(
+    *,
+    actor,
+    disposition_id,
+    reason,
+):
+    """
+    Cancel a pending disposition.
+
+    Pending -> Cancelled
+
+    Does not modify stock, asset lifecycle,
+    inspections, reservations, or transfers.
+    """
+
+    disposition_reference = AssetDisposition.objects.get(
+        pk=disposition_id
+    )
+
+    # Lock the parent asset first.
+    asset = Asset.objects.select_for_update().get(
+        pk=disposition_reference.asset_id
+    )
+
+    validate_asset_metadata_permission(
+        actor=actor,
+        asset=asset,
+    )
+
+    disposition = (
+        AssetDisposition.objects.select_for_update()
+        .get(
+            pk=disposition_id,
+            asset_id=asset.pk,
+        )
+    )
+
+    if disposition.status != AssetDisposition.Status.PENDING:
+        raise ValidationError(
+            "Only pending dispositions can be cancelled."
+        )
+
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValidationError(
+            "A disposition cancellation reason is required."
+        )
+
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
+
+    stock.full_clean()
+
+    disposition.status = AssetDisposition.Status.CANCELLED
+
+    # Store the cancellation reason in the
+    # existing completion notes field.
+    disposition.completion_notes = (
+        f"Cancellation reason: {reason.strip()}"
+    )
+
+    disposition.full_clean()
+    disposition.save(
+        update_fields=[
+            "status",
+            "completion_notes",
+        ]
+    )
+
+    return disposition

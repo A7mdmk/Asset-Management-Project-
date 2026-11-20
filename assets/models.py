@@ -516,3 +516,278 @@ class AssetMaintenance(models.Model):
             f"Maintenance #{self.pk} - "
             f"{self.asset.name} ({self.status})"
         )
+
+# ==========================================================
+# ASSET INSPECTION
+# ==========================================================
+
+class AssetInspection(models.Model):
+
+    class Status(models.TextChoices):
+        PENDING = "Pending", "Pending"
+        COMPLETED = "Completed", "Completed"
+        CANCELLED = "Cancelled", "Cancelled"
+
+    class Recommendation(models.TextChoices):
+        RETURN_TO_SERVICE = (
+            "ReturnToService",
+            "Return to Service",
+        )
+        REPAIR = "Repair", "Repair"
+        RETIRE = "Retire", "Retire"
+        DONATE = "Donate", "Donate"
+        RECYCLE = "Recycle", "Recycle"
+        DISPOSE = "Dispose", "Dispose"
+
+    asset = models.ForeignKey(
+        Asset,
+        on_delete=models.PROTECT,
+        related_name="inspection_records",
+    )
+
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="requested_inspections",
+    )
+
+    inspected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="completed_inspections",
+        null=True,
+        blank=True,
+    )
+
+    quantity = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)],
+        default=1,
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+
+    findings = models.TextField(
+        max_length=2000,
+        blank=True,
+    )
+
+    recommendation = models.CharField(
+        max_length=30,
+        choices=Recommendation.choices,
+        blank=True,
+    )
+
+    requested_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    inspected_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ["-requested_at"]
+
+    def clean(self):
+        super().clean()
+
+        errors = {}
+
+        if self.quantity is not None:
+            if self.quantity < 1:
+                errors["quantity"] = (
+                    "Inspection quantity must be at least 1."
+                )
+
+            if self.asset_id:
+                if self.quantity > self.asset.quantity:
+                    errors["quantity"] = (
+                        "Inspection quantity cannot exceed "
+                        "the asset's total quantity."
+                    )
+
+                if (
+                    self.asset.tracking_mode
+                    == Asset.TrackingMode.INDIVIDUAL
+                    and self.quantity != 1
+                ):
+                    errors["quantity"] = (
+                        "Individual assets must have "
+                        "inspection quantity 1."
+                    )
+
+        if self.status == self.Status.COMPLETED:
+            if not self.inspected_by_id:
+                errors["inspected_by"] = (
+                    "A completed inspection needs an inspector."
+                )
+
+            if not self.findings or not self.findings.strip():
+                errors["findings"] = (
+                    "Inspection findings are required."
+                )
+
+            if not self.recommendation:
+                errors["recommendation"] = (
+                    "An inspection recommendation is required."
+                )
+
+            if not self.inspected_at:
+                errors["inspected_at"] = (
+                    "Inspection completion time is required."
+                )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return (
+            f"Inspection #{self.pk} - "
+            f"{self.asset.name} ({self.status})"
+        )
+
+
+# ==========================================================
+# ASSET DISPOSITION
+# ==========================================================
+
+class AssetDisposition(models.Model):
+
+    class DispositionType(models.TextChoices):
+        RETIRED = "Retired", "Retired"
+        DONATED = "Donated", "Donated"
+        RECYCLED = "Recycled", "Recycled"
+        DISPOSED = "Disposed", "Disposed"
+
+    class Status(models.TextChoices):
+        PENDING = "Pending", "Pending"
+        COMPLETED = "Completed", "Completed"
+        CANCELLED = "Cancelled", "Cancelled"
+
+    asset = models.ForeignKey(
+        Asset,
+        on_delete=models.PROTECT,
+        related_name="disposition_records",
+    )
+
+    inspection = models.ForeignKey(
+        AssetInspection,
+        on_delete=models.PROTECT,
+        related_name="dispositions",
+    )
+
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="requested_dispositions",
+    )
+
+    completed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="completed_dispositions",
+        null=True,
+        blank=True,
+    )
+
+    disposition_type = models.CharField(
+        max_length=20,
+        choices=DispositionType.choices,
+    )
+
+    quantity = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)],
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+
+    reason = models.TextField(
+        max_length=2000,
+    )
+
+    completion_notes = models.TextField(
+        max_length=2000,
+        blank=True,
+    )
+
+    requested_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ["-requested_at"]
+
+    def clean(self):
+        super().clean()
+
+        errors = {}
+
+        if not self.reason or not self.reason.strip():
+            errors["reason"] = (
+                "Disposition reason is required."
+            )
+
+        if self.asset_id and self.inspection_id:
+            if self.inspection.asset_id != self.asset_id:
+                errors["inspection"] = (
+                    "The inspection must belong to "
+                    "the same asset."
+                )
+
+            if self.inspection.status != (
+                AssetInspection.Status.COMPLETED
+            ):
+                errors["inspection"] = (
+                    "Disposition requires a completed inspection."
+                )
+
+        if self.asset_id and self.quantity is not None:
+            if self.quantity > self.asset.quantity:
+                errors["quantity"] = (
+                    "Disposition quantity cannot exceed "
+                    "the asset's total quantity."
+                )
+
+            if (
+                self.asset.tracking_mode
+                == Asset.TrackingMode.INDIVIDUAL
+                and self.quantity != 1
+            ):
+                errors["quantity"] = (
+                    "Individual assets require disposition quantity 1."
+                )
+
+        if self.status == self.Status.COMPLETED:
+            if not self.completed_by_id:
+                errors["completed_by"] = (
+                    "A completed disposition needs an operator."
+                )
+
+            if not self.completed_at:
+                errors["completed_at"] = (
+                    "Disposition completion time is required."
+                )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return (
+            f"Disposition #{self.pk} - "
+            f"{self.asset.name} "
+            f"({self.disposition_type})"
+        )
