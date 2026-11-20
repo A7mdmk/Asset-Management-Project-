@@ -164,16 +164,22 @@
 </div>
 
 
-        {% if is_requester %}
-        <div class="card">
-            <h3>My Requests</h3>
-            <p>
-                Submit resource requests and
-                track their progress.
-            </p>
-            <span class="pending">Coming soon</span>
-        </div>
-        {% endif %}
+
+{% if is_requester %}
+<div class="card">
+    <h3>My Requests</h3>
+
+    <p>
+        View your submitted resource requests
+        and track their approval statuses.
+    </p>
+
+    <a href="{% url 'my_requests' %}">
+        View My Requests
+    </a>
+</div>
+{% endif %}
+
 
         {% if is_custodian %}
         <div class="card">
