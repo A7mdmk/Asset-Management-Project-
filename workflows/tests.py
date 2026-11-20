@@ -1,6 +1,6 @@
 
 from datetime import timedelta
-
+from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
@@ -403,4 +403,95 @@ class ApprovalWorkflowTests(SubmitRequestTests):
         )
         self.assertEqual(self.asset.stock.free, 5)
         self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(RequestApproval.objects.count(), 0)
+    
+    def test_unauthorized_user_cannot_approve_request(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            quantity=2,
+            reason="Testing approval permissions",
+        )
+
+        with self.assertRaises(ValidationError):
+            decide_request(
+                approver=self.other_user,
+                request_id=resource_request.pk,
+                decision=RequestApproval.Decision.APPROVED,
+            )
+
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.PENDING,
+        )
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(RequestApproval.objects.count(), 0)
+
+    def test_failed_approval_preserves_stock_and_request(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            quantity=2,
+            reason="Testing transaction rollback",
+        )
+
+        # Simulate an asset becoming ineligible after submission.
+        self.asset.publication = Asset.Publication.WITHDRAWN
+        self.asset.save(update_fields=["publication"])
+
+        with self.assertRaises(ValidationError):
+            decide_request(
+                approver=self.approver,
+                request_id=resource_request.pk,
+                decision=RequestApproval.Decision.APPROVED,
+            )
+
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.PENDING,
+        )
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(RequestApproval.objects.count(), 0)
+
+    def test_database_error_rolls_back_stock_reservation(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            quantity=2,
+            reason="Testing atomic rollback",
+        )
+
+        # Simulate a database error when saving the approval.
+        # This happens after the service modifies stock.
+        with patch.object(
+            RequestApproval,
+            "save",
+            side_effect=RuntimeError("Simulated database failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                decide_request(
+                    approver=self.approver,
+                    request_id=resource_request.pk,
+                    decision=RequestApproval.Decision.APPROVED,
+                )
+
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        # The transaction must restore the original values.
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.PENDING,
+        )
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.total, 5)
         self.assertEqual(RequestApproval.objects.count(), 0)
