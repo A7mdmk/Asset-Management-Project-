@@ -1,0 +1,511 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Approvals | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        header a {
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        main {
+            max-width: 1150px;
+            margin: 35px auto;
+            padding: 0 20px;
+        }
+
+        h2 {
+            color: #17365d;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #627083;
+            line-height: 1.6;
+            margin-bottom: 28px;
+        }
+
+        .section {
+            margin-bottom: 40px;
+        }
+
+        .section-heading {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+        }
+
+        .section-heading h3 {
+            color: #17365d;
+            margin: 0;
+        }
+
+        .count {
+            background: #e8eef5;
+            color: #17365d;
+            border-radius: 20px;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: bold;
+        }
+
+        .request-list {
+            display: grid;
+            gap: 18px;
+        }
+
+        .request-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            border-left: 4px solid #17365d;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        .request-card.source {
+            border-left-color: #0f766e;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .card-header h4 {
+            color: #17365d;
+            font-size: 18px;
+            margin: 0;
+        }
+
+        .stage {
+            display: inline-block;
+            padding: 7px 12px;
+            border-radius: 20px;
+            background: #eef2ff;
+            color: #3730a3;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .stage-source {
+            background: #ccfbf1;
+            color: #115e59;
+        }
+
+        .details {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(210px, 1fr));
+            gap: 12px 20px;
+            margin-top: 22px;
+        }
+
+        .details p {
+            margin: 0;
+            line-height: 1.6;
+            font-size: 14px;
+            overflow-wrap: anywhere;
+        }
+
+        .details strong {
+            color: #334155;
+        }
+
+        .reason {
+            border-top: 1px solid #e2e8f0;
+            padding-top: 16px;
+            margin-top: 20px;
+            line-height: 1.6;
+            overflow-wrap: anywhere;
+        }
+
+        .note {
+            background: #f1f5f9;
+            border-radius: 7px;
+            padding: 12px 15px;
+            margin-top: 18px;
+            color: #475569;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .empty-state {
+            background: white;
+            padding: 35px 20px;
+            border-radius: 12px;
+            color: #64748b;
+            text-align: center;
+            border: 1px dashed #cbd5e1;
+        }
+
+        .empty-state p {
+            margin-bottom: 0;
+            line-height: 1.6;
+        }
+
+        .workflow-info {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 30px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        .workflow-info h3 {
+            color: #17365d;
+            margin-top: 0;
+        }
+
+        .workflow-steps {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        .workflow-step {
+            background: #f3f6fa;
+            border-radius: 9px;
+            padding: 16px;
+        }
+
+        .workflow-step strong {
+            color: #17365d;
+        }
+
+        .workflow-step p {
+            color: #64748b;
+            line-height: 1.5;
+            font-size: 14px;
+            margin-bottom: 0;
+        }
+
+        footer {
+            text-align: center;
+            padding: 35px 20px;
+            color: #758297;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+
+    <a href="{% url 'dashboard' %}">
+        Back to Dashboard
+    </a>
+</header>
+
+<main>
+
+    <h2>Resource Request Approvals</h2>
+
+    <p class="subtitle">
+        Review resource requests awaiting your authorization.
+        Only requests assigned to your approval role are shown.
+    </p>
+
+    <section class="workflow-info">
+        <h3>Approval Process</h3>
+
+        <div class="workflow-steps">
+
+            <div class="workflow-step">
+                <strong>Stage 1 — Destination Acceptance</strong>
+                <p>
+                    The authorized destination department approver
+                    reviews the incoming resource request.
+                </p>
+            </div>
+
+            <div class="workflow-step">
+                <strong>Stage 2 — Source Release</strong>
+                <p>
+                    After destination acceptance, the assigned
+                    asset custodian reviews the release.
+                </p>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- STAGE 1: DESTINATION APPROVALS -->
+
+    <section class="section">
+
+        <div class="section-heading">
+            <h3>Stage 1 — Destination Acceptance</h3>
+
+            <span class="count">
+                {{ destination_requests|length }} Pending
+            </span>
+        </div>
+
+        {% if destination_requests %}
+
+            <div class="request-list">
+
+                {% for resource_request in destination_requests %}
+
+                    <article class="request-card">
+
+                        <div class="card-header">
+                            <h4>
+                                Request #{{ resource_request.pk }}
+                                — {{ resource_request.asset.name }}
+                            </h4>
+
+                            <span class="stage">
+                                Destination Acceptance
+                            </span>
+                        </div>
+
+                        <div class="details">
+
+                            <p>
+                                <strong>Requester:</strong>
+                                {{ resource_request.requester.username }}
+                            </p>
+
+                            <p>
+                                <strong>Asset:</strong>
+                                {{ resource_request.asset.name }}
+                            </p>
+
+                            <p>
+                                <strong>Quantity:</strong>
+                                {{ resource_request.quantity }}
+                            </p>
+
+                            <p>
+                                <strong>Destination Department:</strong>
+                                {{ resource_request.destination_department.name }}
+                            </p>
+
+                            <p>
+                                <strong>Submitted:</strong>
+                                {{ resource_request.created_at|date:"M d, Y H:i" }}
+                            </p>
+
+                            <p>
+                                <strong>Expires:</strong>
+                                {{ resource_request.expires_at|date:"M d, Y H:i" }}
+                            </p>
+
+                        </div>
+
+                        <div class="reason">
+                            <strong>Reason:</strong>
+                            {{ resource_request.reason|linebreaksbr }}
+                        </div>
+
+                        <div class="note">
+                            Awaiting destination department decision.
+                            Approval at this stage does not reserve stock.
+                        </div>
+
+<a
+    href="{% url 'approval_decision' resource_request.pk 'Destination' %}"
+    style="
+        display:inline-block;
+        margin-top:15px;
+        padding:11px 20px;
+        background:#17365d;
+        color:white;
+        text-decoration:none;
+        border-radius:7px;
+        font-weight:bold;
+    "
+>
+    Review &amp; Decide
+</a>
+
+
+                    </article>
+
+                {% endfor %}
+
+            </div>
+
+        {% else %}
+
+            <div class="empty-state">
+                <strong>No destination approvals pending</strong>
+
+                <p>
+                    There are currently no eligible requests
+                    awaiting your destination acceptance.
+                </p>
+            </div>
+
+        {% endif %}
+
+    </section>
+
+    <!-- STAGE 2: SOURCE APPROVALS -->
+
+    <section class="section">
+
+        <div class="section-heading">
+            <h3>Stage 2 — Source Release</h3>
+
+            <span class="count">
+                {{ source_requests|length }} Pending
+            </span>
+        </div>
+
+        {% if source_requests %}
+
+            <div class="request-list">
+
+                {% for resource_request in source_requests %}
+
+                    <article class="request-card source">
+
+                        <div class="card-header">
+                            <h4>
+                                Request #{{ resource_request.pk }}
+                                — {{ resource_request.asset.name }}
+                            </h4>
+
+                            <span class="stage stage-source">
+                                Source Release
+                            </span>
+                        </div>
+
+                        <div class="details">
+
+                            <p>
+                                <strong>Requester:</strong>
+                                {{ resource_request.requester.username }}
+                            </p>
+
+                            <p>
+                                <strong>Asset:</strong>
+                                {{ resource_request.asset.name }}
+                            </p>
+
+                            <p>
+                                <strong>Quantity:</strong>
+                                {{ resource_request.quantity }}
+                            </p>
+
+                            <p>
+                                <strong>Source Department:</strong>
+                                {{ resource_request.asset.department.name }}
+                            </p>
+
+                            <p>
+                                <strong>Destination Department:</strong>
+                                {{ resource_request.destination_department.name }}
+                            </p>
+
+                            <p>
+                                <strong>Submitted:</strong>
+                                {{ resource_request.created_at|date:"M d, Y H:i" }}
+                            </p>
+
+                            <p>
+                                <strong>Expires:</strong>
+                                {{ resource_request.expires_at|date:"M d, Y H:i" }}
+                            </p>
+
+                        </div>
+
+                        <div class="reason">
+                            <strong>Reason:</strong>
+                            {{ resource_request.reason|linebreaksbr }}
+                        </div>
+
+                        <div class="note">
+                            Destination acceptance completed.
+                            Final approval by the assigned source
+                            custodian reserves the requested stock.
+                        </div>
+
+<a
+    href="{% url 'approval_decision' resource_request.pk 'Source' %}"
+    style="
+        display:inline-block;
+        margin-top:15px;
+        padding:11px 20px;
+        background:#0f766e;
+        color:white;
+        text-decoration:none;
+        border-radius:7px;
+        font-weight:bold;
+    "
+>
+    Review &amp; Decide
+</a>
+
+
+                    </article>
+
+                {% endfor %}
+
+            </div>
+
+        {% else %}
+
+            <div class="empty-state">
+                <strong>No source releases pending</strong>
+
+                <p>
+                    There are currently no eligible requests
+                    awaiting your source release decision.
+                </p>
+            </div>
+
+        {% endif %}
+
+    </section>
+
+</main>
+
+<footer>
+    KU ResourceSavers | COSC 336 | Group 7
+</footer>
+
+</body>
+</html>

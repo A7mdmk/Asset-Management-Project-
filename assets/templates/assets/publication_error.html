@@ -1,0 +1,112 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Publication Error | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        main {
+            max-width: 700px;
+            margin: 60px auto;
+            padding: 0 20px;
+        }
+
+        .panel {
+            background: white;
+            padding: 32px;
+            border-radius: 12px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        h2 {
+            color: #991b1b;
+            margin-top: 0;
+        }
+
+        .error-box {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            border-radius: 8px;
+            padding: 18px;
+            margin: 22px 0;
+        }
+
+        .error-box ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #17365d;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 7px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+</header>
+
+<main>
+    <section class="panel">
+
+        <h2>Publication Action Failed</h2>
+
+        <p>
+            The publication status of
+            <strong>{{ asset.name }}</strong>
+            could not be changed.
+        </p>
+
+        <div class="error-box" role="alert">
+            <ul>
+                {% for error in errors %}
+                    <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <a
+            href="{% url 'asset_management' %}"
+            class="btn"
+        >
+            Back to Asset Management
+        </a>
+
+    </section>
+</main>
+
+</body>
+</html>

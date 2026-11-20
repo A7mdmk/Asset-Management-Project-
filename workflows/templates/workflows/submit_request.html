@@ -1,0 +1,310 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Request Asset | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        header a {
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        main {
+            max-width: 800px;
+            margin: 35px auto;
+            padding: 0 20px;
+        }
+
+        h2 {
+            color: #17365d;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #627083;
+            margin-bottom: 25px;
+            line-height: 1.6;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 28px;
+            margin-bottom: 22px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        .panel h3 {
+            color: #17365d;
+            margin-top: 0;
+        }
+
+        .asset-info {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(200px, 1fr));
+            gap: 14px;
+        }
+
+        .asset-info p {
+            margin: 5px 0;
+            line-height: 1.6;
+        }
+
+        .availability {
+            display: inline-block;
+            padding: 9px 14px;
+            background: #e6f6eb;
+            color: #216e39;
+            border-radius: 7px;
+            font-weight: bold;
+            margin-top: 16px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin: 20px 0 8px;
+        }
+
+        select,
+        input,
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            font: inherit;
+            background: white;
+        }
+
+        textarea {
+            resize: vertical;
+        }
+
+        .help {
+            color: #627083;
+            font-size: 13px;
+            line-height: 1.6;
+            margin-top: 7px;
+        }
+
+        .error-list {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+            border-radius: 7px;
+            padding: 12px 16px;
+            margin: 15px 0;
+        }
+
+        .error-list ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .field-error {
+            color: #991b1b;
+            font-size: 13px;
+            margin-top: 7px;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 28px;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #17365d;
+            color: white;
+            border: none;
+            border-radius: 7px;
+            padding: 12px 20px;
+            font-size: 14px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .btn-secondary {
+            background: #e8eef5;
+            color: #17365d;
+        }
+
+        footer {
+            text-align: center;
+            color: #758297;
+            padding: 30px;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+    <a href="{% url 'asset_catalog' %}">
+        Back to Asset Catalog
+    </a>
+</header>
+
+<main>
+
+    <h2>Request Campus Asset</h2>
+
+    <p class="subtitle">
+        Complete the form below to submit your
+        resource request for approval.
+    </p>
+
+    <section class="panel">
+        <h3>Selected Asset</h3>
+
+        <div class="asset-info">
+            <div>
+                <p>
+                    <strong>Name:</strong>
+                    {{ asset.name }}
+                </p>
+
+                <p>
+                    <strong>Category:</strong>
+                    {{ asset.category.name }}
+                </p>
+            </div>
+
+            <div>
+                <p>
+                    <strong>Department:</strong>
+                    {{ asset.department.name }}
+                </p>
+
+                <p>
+                    <strong>Condition:</strong>
+                    {{ asset.get_condition_display }}
+                </p>
+            </div>
+        </div>
+
+        <div class="availability">
+            {{ asset.stock.free }} Available
+        </div>
+    </section>
+
+    <section class="panel">
+        <h3>Request Details</h3>
+
+        <form method="post">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="error-list" role="alert">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            <label for="{{ form.destination_department.id_for_label }}">
+                Destination Department
+            </label>
+
+            {{ form.destination_department }}
+
+            {% if form.destination_department.errors %}
+                <div class="field-error" role="alert">
+                    {{ form.destination_department.errors }}
+                </div>
+            {% endif %}
+
+            <label for="{{ form.quantity.id_for_label }}">
+                Quantity
+            </label>
+
+            {{ form.quantity }}
+
+            {% if form.quantity.errors %}
+                <div class="field-error" role="alert">
+                    {{ form.quantity.errors }}
+                </div>
+            {% endif %}
+
+            <p class="help">
+                Maximum currently available:
+                {{ asset.stock.free }}.
+                Individual assets can only be requested
+                one at a time.
+            </p>
+
+            <label for="{{ form.reason.id_for_label }}">
+                Reason for Request
+            </label>
+
+            {{ form.reason }}
+
+            {% if form.reason.errors %}
+                <div class="field-error" role="alert">
+                    {{ form.reason.errors }}
+                </div>
+            {% endif %}
+
+            <p class="help">
+                Explain how you intend to use this
+                resource. Maximum 2,000 characters.
+            </p>
+
+            <div class="actions">
+                <button class="btn" type="submit">
+                    Submit Request
+                </button>
+
+                <a
+                    class="btn btn-secondary"
+                    href="{% url 'asset_catalog' %}"
+                >
+                    Cancel
+                </a>
+            </div>
+
+        </form>
+    </section>
+
+</main>
+
+<footer>
+    KU ResourceSavers | COSC 336 | Group 7
+</footer>
+
+</body>
+</html>

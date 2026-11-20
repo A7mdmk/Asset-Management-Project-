@@ -149,47 +149,71 @@
     </a>
 </div>
 
-        <div class="card">
-            <h3>Browse Assets</h3>
-            <p>
-                Search and explore available campus
-                resources.
-            </p>
-            <span class="pending">Coming soon</span>
-        </div>
 
-        {% if is_requester %}
-        <div class="card">
-            <h3>My Requests</h3>
-            <p>
-                Submit resource requests and
-                track their progress.
-            </p>
-            <span class="pending">Coming soon</span>
-        </div>
-        {% endif %}
+<div class="card">
+    <h3>Browse Assets</h3>
 
-        {% if is_custodian %}
-        <div class="card">
-            <h3>Asset Management</h3>
-            <p>
-                Register assets and manage
-                department resources.
-            </p>
-            <span class="pending">Coming soon</span>
-        </div>
-        {% endif %}
+    <p>
+        Search and explore available campus
+        resources.
+    </p>
 
-        {% if is_approver %}
-        <div class="card">
-            <h3>Approvals</h3>
-            <p>
-                Review and manage pending
-                resource approvals.
-            </p>
-            <span class="pending">Coming soon</span>
-        </div>
-        {% endif %}
+    <a href="{% url 'asset_catalog' %}">
+        Browse Campus Assets
+    </a>
+</div>
+
+
+
+{% if is_requester %}
+<div class="card">
+    <h3>My Requests</h3>
+
+    <p>
+        View your submitted resource requests
+        and track their approval statuses.
+    </p>
+
+    <a href="{% url 'my_requests' %}">
+        View My Requests
+    </a>
+</div>
+{% endif %}
+
+
+
+{% if is_custodian %}
+<div class="card">
+    <h3>Asset Management</h3>
+
+    <p>
+        View assigned assets, monitor stock
+        balances, and manage campus resources.
+    </p>
+
+    <a href="{% url 'asset_management' %}">
+        Manage My Assets
+    </a>
+</div>
+{% endif %}
+
+
+
+{% if is_approver or is_custodian %}
+<div class="card">
+    <h3>Approvals</h3>
+
+    <p>
+        Review pending destination acceptance
+        and source release requests.
+    </p>
+
+    <a href="{% url 'approvals' %}">
+        Review Approvals
+    </a>
+</div>
+{% endif %}
+
 
         <div class="card">
             <h3>Notifications</h3>
