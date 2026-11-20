@@ -1,4 +1,12 @@
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError
+from django.shortcuts import redirect
+from django.core.exceptions import PermissionDenied
+from django.shortcuts import get_object_or_404
 
+from .services import change_asset_publication
+from .forms import AssetRegistrationForm
+from .services import register_asset
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.shortcuts import render
@@ -132,3 +140,128 @@ def asset_management_view(request):
         "assets/management.html",
         context,
     )
+
+@role_required("Custodian")
+def asset_registration_view(request):
+    """
+    Register a new asset for the logged-in custodian.
+
+    Asset ownership and publication status are
+    assigned on the server, not by the user.
+    """
+
+    if request.method == "POST":
+        form = AssetRegistrationForm(request.POST)
+
+        if form.is_valid():
+            data = form.cleaned_data
+
+            try:
+                register_asset(
+                    name=data["name"],
+                    description=data["description"],
+                    asset_tag=data["asset_tag"] or None,
+                    category=data["category"],
+                    department=data["department"],
+                    custodian=request.user,
+                    location=data["location"],
+                    tracking_mode=data["tracking_mode"],
+                    quantity=data["quantity"],
+                    condition=data["condition"],
+                    lifecycle=Asset.Lifecycle.ACTIVE,
+                    publication=Asset.Publication.DRAFT,
+                )
+
+            except ValidationError as error:
+                if hasattr(error, "message_dict"):
+                    for field, messages in error.message_dict.items():
+                        target = (
+                            field
+                            if field in form.fields
+                            else None
+                        )
+
+                        for message in messages:
+                            form.add_error(target, message)
+                else:
+                    for message in error.messages:
+                        form.add_error(None, message)
+
+            except IntegrityError:
+                form.add_error(
+                    "asset_tag",
+                    "This asset tag is already in use.",
+                )
+
+            else:
+                return redirect("asset_management")
+
+    else:
+        form = AssetRegistrationForm()
+
+    return render(
+        request,
+        "assets/register.html",
+        {
+            "form": form,
+        },
+    )
+
+@role_required("Custodian")
+def asset_publication_view(request, asset_id):
+    """
+    Allow custodians to publish or withdraw
+    assets assigned to them.
+
+    Publication changes require POST requests.
+    """
+
+    asset = get_object_or_404(
+        Asset,
+        pk=asset_id,
+    )
+
+    # A custodian cannot manage another user's assets.
+    if asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    if request.method != "POST":
+        return redirect("asset_management")
+
+    action = request.POST.get("action", "").strip()
+
+    allowed_actions = {
+        "publish": Asset.Publication.PUBLISHED,
+        "withdraw": Asset.Publication.WITHDRAWN,
+    }
+
+    publication = allowed_actions.get(action)
+
+    if publication is None:
+        raise PermissionDenied
+
+    try:
+        change_asset_publication(
+            actor=request.user,
+            asset_id=asset.pk,
+            publication=publication,
+        )
+
+    except ValidationError as error:
+        messages = (
+            error.messages
+            if hasattr(error, "messages")
+            else [str(error)]
+        )
+
+        return render(
+            request,
+            "assets/publication_error.html",
+            {
+                "asset": asset,
+                "errors": messages,
+            },
+            status=400,
+        )
+
+    return redirect("asset_management")

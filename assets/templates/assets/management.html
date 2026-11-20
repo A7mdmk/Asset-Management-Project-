@@ -241,6 +241,15 @@
         and track publication status.
     </p>
 
+<div style="margin-bottom: 25px;">
+    <a
+        href="{% url 'asset_registration' %}"
+        class="btn"
+    >
+        + Register New Asset
+    </a>
+</div>
+
     <section class="filter-panel">
 
         <form method="get">
@@ -333,6 +342,56 @@
                             {{ asset.get_publication_display }}
                         </span>
                     </p>
+
+{% if asset.publication == "Published" %}
+
+    <form
+        method="post"
+        action="{% url 'asset_publication' asset.pk %}"
+        style="margin-top: 15px;"
+    >
+        {% csrf_token %}
+
+        <input
+            type="hidden"
+            name="action"
+            value="withdraw"
+        >
+
+        <button
+            type="submit"
+            class="btn"
+            style="background: #991b1b;"
+        >
+            Withdraw Asset
+        </button>
+    </form>
+
+{% else %}
+
+    <form
+        method="post"
+        action="{% url 'asset_publication' asset.pk %}"
+        style="margin-top: 15px;"
+    >
+        {% csrf_token %}
+
+        <input
+            type="hidden"
+            name="action"
+            value="publish"
+        >
+
+        <button
+            type="submit"
+            class="btn"
+        >
+            Publish Asset
+        </button>
+    </form>
+
+{% endif %}
+
 
                     <div class="stock-panel">
 

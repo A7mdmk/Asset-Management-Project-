@@ -1,0 +1,387 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Register Asset | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        header a {
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        main {
+            max-width: 850px;
+            margin: 35px auto;
+            padding: 0 20px;
+        }
+
+        h2 {
+            color: #17365d;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #627083;
+            line-height: 1.6;
+            margin-bottom: 25px;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        .panel h3 {
+            margin-top: 0;
+            color: #17365d;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(240px, 1fr));
+            gap: 18px;
+        }
+
+        .field {
+            margin-bottom: 12px;
+        }
+
+        .field-full {
+            grid-column: 1 / -1;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        input,
+        select,
+        textarea {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            background: white;
+            font: inherit;
+        }
+
+        textarea {
+            resize: vertical;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: 2px solid #93b4d7;
+            outline-offset: 1px;
+        }
+
+        .error {
+            color: #991b1b;
+            font-size: 13px;
+            margin-top: 7px;
+            line-height: 1.5;
+        }
+
+        .error-box {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+            border-radius: 7px;
+            padding: 14px 18px;
+            margin-bottom: 22px;
+        }
+
+        .help {
+            color: #64748b;
+            font-size: 13px;
+            line-height: 1.6;
+            margin-top: 7px;
+        }
+
+        .info-box {
+            background: #eff6ff;
+            color: #1e40af;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 22px;
+            line-height: 1.7;
+            font-size: 14px;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 25px;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #17365d;
+            color: white;
+            border: none;
+            padding: 12px 22px;
+            border-radius: 7px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .btn-secondary {
+            background: #e8eef5;
+            color: #17365d;
+        }
+
+        footer {
+            padding: 35px 20px;
+            color: #758297;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+
+    <a href="{% url 'asset_management' %}">
+        Back to Asset Management
+    </a>
+</header>
+
+<main>
+
+    <h2>Register New Asset</h2>
+
+    <p class="subtitle">
+        Add a new campus resource to the asset inventory.
+    </p>
+
+    <div class="info-box">
+        New assets are automatically assigned to your
+        custodian account and start with
+        <strong>Draft</strong> publication status.
+        Stock balances and registration history are
+        initialized automatically.
+    </div>
+
+    <section class="panel">
+
+        <h3>Asset Information</h3>
+
+        <form method="post">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="error-box" role="alert">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            <div class="form-grid">
+
+                <div class="field field-full">
+                    <label for="{{ form.name.id_for_label }}">
+                        Asset Name
+                    </label>
+
+                    {{ form.name }}
+
+                    {% if form.name.errors %}
+                        <div class="error" role="alert">
+                            {{ form.name.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="field field-full">
+                    <label for="{{ form.description.id_for_label }}">
+                        Description
+                    </label>
+
+                    {{ form.description }}
+
+                    {% if form.description.errors %}
+                        <div class="error" role="alert">
+                            {{ form.description.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.asset_tag.id_for_label }}">
+                        Asset Tag
+                    </label>
+
+                    {{ form.asset_tag }}
+
+                    <p class="help">
+                        Optional unique identifier.
+                    </p>
+
+                    {% if form.asset_tag.errors %}
+                        <div class="error" role="alert">
+                            {{ form.asset_tag.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.location.id_for_label }}">
+                        Location
+                    </label>
+
+                    {{ form.location }}
+
+                    {% if form.location.errors %}
+                        <div class="error" role="alert">
+                            {{ form.location.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.category.id_for_label }}">
+                        Category
+                    </label>
+
+                    {{ form.category }}
+
+                    {% if form.category.errors %}
+                        <div class="error" role="alert">
+                            {{ form.category.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.department.id_for_label }}">
+                        Department
+                    </label>
+
+                    {{ form.department }}
+
+                    {% if form.department.errors %}
+                        <div class="error" role="alert">
+                            {{ form.department.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.tracking_mode.id_for_label }}">
+                        Tracking Mode
+                    </label>
+
+                    {{ form.tracking_mode }}
+
+                    <p class="help">
+                        Individual assets must have quantity 1.
+                        Lot assets can have multiple units.
+                    </p>
+
+                    {% if form.tracking_mode.errors %}
+                        <div class="error" role="alert">
+                            {{ form.tracking_mode.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.quantity.id_for_label }}">
+                        Quantity
+                    </label>
+
+                    {{ form.quantity }}
+
+                    {% if form.quantity.errors %}
+                        <div class="error" role="alert">
+                            {{ form.quantity.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.condition.id_for_label }}">
+                        Condition
+                    </label>
+
+                    {{ form.condition }}
+
+                    {% if form.condition.errors %}
+                        <div class="error" role="alert">
+                            {{ form.condition.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+
+            </div>
+
+            <div class="actions">
+
+                <button class="btn" type="submit">
+                    Register Asset
+                </button>
+
+                <a
+                    class="btn btn-secondary"
+                    href="{% url 'asset_management' %}"
+                >
+                    Cancel
+                </a>
+
+            </div>
+
+        </form>
+
+    </section>
+
+</main>
+
+<footer>
+    KU ResourceSavers | COSC 336 | Group 7
+</footer>
+
+</body>
+</html>
