@@ -926,3 +926,157 @@ def report_transfer_dispute(*, actor, transfer_id, reason):
     )
 
     return transfer
+
+@transaction.atomic
+def cancel_arranged_transfer(*, actor, transfer_id, reason):
+    if not actor.is_authenticated or not actor.is_active:
+        raise ValidationError(
+            "An active account is required."
+        )
+
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValidationError(
+            "A cancellation reason is required."
+        )
+
+    # Identify related records before acquiring locks.
+    transfer_reference = Transfer.objects.get(
+        pk=transfer_id
+    )
+
+    reservation_reference = Reservation.objects.get(
+        pk=transfer_reference.reservation_id
+    )
+
+    # Follow the same locking order as the other workflows.
+    resource_request = (
+        ResourceRequest.objects.select_for_update()
+        .get(pk=reservation_reference.request_id)
+    )
+
+    asset = (
+        Asset.objects.select_for_update()
+        .get(pk=resource_request.asset_id)
+    )
+
+    reservation = (
+        Reservation.objects.select_for_update()
+        .get(pk=reservation_reference.pk)
+    )
+
+    transfer = (
+        Transfer.objects.select_for_update()
+        .get(pk=transfer_id)
+    )
+
+    # Check record relationships.
+    if transfer.reservation_id != reservation.pk:
+        raise ValidationError(
+            "Transfer reservation mismatch."
+        )
+
+    if reservation.request_id != resource_request.pk:
+        raise ValidationError(
+            "Reservation request mismatch."
+        )
+
+    # Only the original requester or source custodian can cancel.
+    if actor.pk not in (
+        resource_request.requester_id,
+        asset.custodian_id,
+    ):
+        raise ValidationError(
+            "Only the requester or assigned source custodian "
+            "can cancel this transfer."
+        )
+
+    if resource_request.status != ResourceRequest.Status.APPROVED:
+        raise ValidationError(
+            "The resource request must be approved."
+        )
+
+    if reservation.status != Reservation.Status.CONVERTED:
+        raise ValidationError(
+            "The reservation must be converted."
+        )
+
+    if transfer.status != Transfer.Status.ARRANGED:
+        raise ValidationError(
+            "Only arranged transfers can be cancelled."
+        )
+
+    # Never release stock once dispatch or receipt has started.
+    if (
+        transfer.dispatched_at is not None
+        or transfer.received_at is not None
+        or transfer.received_by_id is not None
+        or transfer.disputed_at is not None
+        or transfer.disputed_by_id is not None
+    ):
+        raise ValidationError(
+            "A dispatched, received, or disputed "
+            "transfer cannot be cancelled."
+        )
+
+    stock = (
+        StockBalance.objects.select_for_update()
+        .get(asset=asset)
+    )
+
+    if stock.held < transfer.quantity:
+        raise ValidationError(
+            "Insufficient held stock for cancellation."
+        )
+
+    # Release held stock exactly once.
+    stock.held -= transfer.quantity
+
+    if (
+        asset.condition in (
+            Asset.Condition.GOOD,
+            Asset.Condition.FAIR,
+        )
+        and asset.lifecycle == Asset.Lifecycle.ACTIVE
+        and asset.publication == Asset.Publication.PUBLISHED
+    ):
+        stock.free += transfer.quantity
+    else:
+        stock.blocked += transfer.quantity
+
+    stock.full_clean()
+    stock.save(
+        update_fields=[
+            "free",
+            "held",
+            "blocked",
+            "updated_at",
+        ]
+    )
+
+    # Update transfer, reservation, and request atomically.
+    transfer.status = Transfer.Status.CANCELLED
+    transfer.cancellation_reason = reason.strip()
+    transfer.full_clean()
+    transfer.save(
+        update_fields=[
+            "status",
+            "cancellation_reason",
+        ]
+    )
+
+    reservation.status = Reservation.Status.CANCELLED
+    reservation.cancellation_reason = reason.strip()
+    reservation.full_clean()
+    reservation.save(
+        update_fields=[
+            "status",
+            "cancellation_reason",
+        ]
+    )
+
+    resource_request.status = ResourceRequest.Status.CANCELLED
+    resource_request.save(
+        update_fields=["status", "updated_at"]
+    )
+
+    return transfer
