@@ -344,3 +344,106 @@ def cancel_pending_request(*, requester, request_id):
     # Pending requests have no reservation,
     # so cancellation does not move stock.
     return resource_request
+
+@transaction.atomic
+def cancel_approved_reservation(
+    *,
+    actor,
+    reservation_id,
+    reason,
+):
+    if not actor.is_authenticated or not actor.is_active:
+        raise ValidationError("An active account is required.")
+
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValidationError(
+            "A cancellation reason is required."
+        )
+
+    # Lock the request first, consistently with approval operations.
+    reservation_reference = Reservation.objects.get(
+        pk=reservation_id
+    )
+
+    resource_request = (
+        ResourceRequest.objects.select_for_update()
+        .get(pk=reservation_reference.request_id)
+    )
+
+    asset = Asset.objects.select_for_update().get(
+        pk=resource_request.asset_id
+    )
+
+    reservation = (
+        Reservation.objects.select_for_update()
+        .get(pk=reservation_id)
+    )
+
+    if actor.pk not in (
+        resource_request.requester_id,
+        asset.custodian_id,
+    ):
+        raise ValidationError(
+            "Only the requester or assigned source custodian "
+            "can cancel this reservation."
+        )
+
+    if (
+        reservation.status != Reservation.Status.APPROVED
+        or resource_request.status != ResourceRequest.Status.APPROVED
+    ):
+        raise ValidationError(
+            "Only approved reservations that have not been "
+            "converted to transfers can be cancelled."
+        )
+
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
+
+    if stock.held < reservation.quantity:
+        raise ValidationError(
+            "Insufficient held stock for cancellation."
+        )
+
+    # Release the reservation exactly once.
+    stock.held -= reservation.quantity
+
+    if (
+        asset.condition in (
+            Asset.Condition.GOOD,
+            Asset.Condition.FAIR,
+        )
+        and asset.lifecycle == Asset.Lifecycle.ACTIVE
+        and asset.publication == Asset.Publication.PUBLISHED
+    ):
+        stock.free += reservation.quantity
+    else:
+        stock.blocked += reservation.quantity
+
+    stock.full_clean()
+    stock.save(
+        update_fields=[
+            "free",
+            "held",
+            "blocked",
+            "updated_at",
+        ]
+    )
+
+    reservation.status = Reservation.Status.CANCELLED
+    reservation.cancellation_reason = reason.strip()
+    reservation.full_clean()
+    reservation.save(
+        update_fields=[
+            "status",
+            "cancellation_reason",
+        ]
+    )
+
+    resource_request.status = ResourceRequest.Status.CANCELLED
+    resource_request.save(
+        update_fields=["status", "updated_at"]
+    )
+
+    return reservation
