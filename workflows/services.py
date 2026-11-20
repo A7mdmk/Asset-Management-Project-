@@ -788,3 +788,141 @@ def confirm_transfer_receipt(*, actor, transfer_id):
     )
 
     return transfer
+
+@transaction.atomic
+def report_transfer_dispute(*, actor, transfer_id, reason):
+    if not actor.is_authenticated or not actor.is_active:
+        raise ValidationError(
+            "An active account is required."
+        )
+
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValidationError(
+            "A dispute reason is required."
+        )
+
+    # Find the request and follow the existing lock order.
+    transfer_reference = Transfer.objects.get(
+        pk=transfer_id
+    )
+
+    reservation_reference = Reservation.objects.get(
+        pk=transfer_reference.reservation_id
+    )
+
+    resource_request = (
+        ResourceRequest.objects.select_for_update()
+        .get(pk=reservation_reference.request_id)
+    )
+
+    asset = (
+        Asset.objects.select_for_update()
+        .get(pk=resource_request.asset_id)
+    )
+
+    reservation = (
+        Reservation.objects.select_for_update()
+        .get(pk=reservation_reference.pk)
+    )
+
+    transfer = (
+        Transfer.objects.select_for_update()
+        .get(pk=transfer_id)
+    )
+
+    if transfer.reservation_id != reservation.pk:
+        raise ValidationError(
+            "Transfer reservation mismatch."
+        )
+
+    if reservation.request_id != resource_request.pk:
+        raise ValidationError(
+            "Reservation request mismatch."
+        )
+
+    if resource_request.status != ResourceRequest.Status.APPROVED:
+        raise ValidationError(
+            "The resource request must be approved."
+        )
+
+    if reservation.status != Reservation.Status.CONVERTED:
+        raise ValidationError(
+            "The reservation must be converted."
+        )
+
+    if not resource_request.destination_department_id:
+        raise ValidationError(
+            "A destination department is required."
+        )
+
+    if not resource_request.destination_department.is_active:
+        raise ValidationError(
+            "The destination department is inactive."
+        )
+
+    # Validate destination approver permissions.
+    if not actor.groups.filter(name="Approver/Admin").exists():
+        raise ValidationError(
+            "Destination approver role is required."
+        )
+
+    authorized = DepartmentApprover.objects.filter(
+        user=actor,
+        department_id=resource_request.destination_department_id,
+        is_active=True,
+    ).exists()
+
+    if not authorized:
+        raise ValidationError(
+            "Not authorized for the destination department."
+        )
+
+    # Disputes are allowed only after dispatch,
+    # before successful receipt.
+    if transfer.status != Transfer.Status.DISPATCHED:
+        raise ValidationError(
+            "Only dispatched transfers can be disputed."
+        )
+
+    if transfer.dispatched_at is None:
+        raise ValidationError(
+            "The transfer has not been dispatched."
+        )
+
+    if transfer.received_at is not None or transfer.received_by_id:
+        raise ValidationError(
+            "A received transfer cannot be disputed."
+        )
+
+    if transfer.disputed_at is not None or transfer.disputed_by_id:
+        raise ValidationError(
+            "This transfer has already been disputed."
+        )
+
+    # Validate stock, but do not move it.
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
+
+    if stock.in_transit < transfer.quantity:
+        raise ValidationError(
+            "Insufficient in-transit stock for this dispute."
+        )
+
+    # Record the dispute without releasing or receiving stock.
+    transfer.status = Transfer.Status.DISPUTED
+    transfer.dispute_reason = reason.strip()
+    transfer.disputed_by = actor
+    transfer.disputed_at = timezone.now()
+
+    transfer.full_clean()
+    transfer.save(
+        update_fields=[
+            "status",
+            "dispute_reason",
+            "disputed_by",
+            "disputed_at",
+        ]
+    )
+
+    return transfer
