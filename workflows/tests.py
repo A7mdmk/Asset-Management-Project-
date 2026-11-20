@@ -16,6 +16,7 @@ from .services import (
     submit_request,
     decide_request,
     cancel_pending_request,
+    cancel_approved_reservation,
 )
 
 
@@ -1071,3 +1072,378 @@ class ApprovalWorkflowTests(SubmitRequestTests):
                 request=resource_request
             ).exists()
         )
+
+    def test_approved_reservation_cancellation_releases_stock(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing approved cancellation",
+        )
+
+        # Stage 1: Destination acceptance
+        decide_request(
+            approver=self.approver,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.DESTINATION,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        # Stage 2: Source release and reservation
+        decide_request(
+            approver=self.custodian,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.SOURCE,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        reservation = Reservation.objects.get(
+            request=resource_request
+        )
+
+        self.asset.stock.refresh_from_db()
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+
+        # The original requester cancels before dispatch.
+        cancel_approved_reservation(
+            actor=self.requester,
+            reservation_id=reservation.pk,
+            reason="Resource is no longer needed",
+        )
+
+        reservation.refresh_from_db()
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.CANCELLED,
+        )
+
+        self.assertEqual(
+            reservation.cancellation_reason,
+            "Resource is no longer needed",
+        )
+
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.CANCELLED,
+        )
+
+        # Held stock returns to Free exactly once.
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.blocked, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+        # Existing approval history remains intact.
+        self.assertEqual(
+            RequestApproval.objects.filter(
+                request=resource_request
+            ).count(),
+            2,
+        )
+
+    def test_unsafe_reservation_cancellation_blocks_stock(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing unsafe cancellation",
+        )
+
+        # Stage 1: Destination acceptance
+        decide_request(
+            approver=self.approver,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.DESTINATION,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        # Stage 2: Source release creates the reservation.
+        decide_request(
+            approver=self.custodian,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.SOURCE,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        reservation = Reservation.objects.get(
+            request=resource_request
+        )
+
+        # Asset becomes unsafe after approval.
+        self.asset.condition = Asset.Condition.UNSAFE
+        self.asset.save(update_fields=["condition"])
+
+        # Cancellation must not return unsafe stock to Free.
+        cancel_approved_reservation(
+            actor=self.requester,
+            reservation_id=reservation.pk,
+            reason="Asset failed safety inspection",
+        )
+
+        reservation.refresh_from_db()
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.CANCELLED,
+        )
+
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.CANCELLED,
+        )
+
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.blocked, 2)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    def test_unauthorized_user_cannot_cancel_reservation(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing cancellation authorization",
+        )
+
+        # Stage 1: Destination acceptance
+        decide_request(
+            approver=self.approver,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.DESTINATION,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        # Stage 2: Source release
+        decide_request(
+            approver=self.custodian,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.SOURCE,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        reservation = Reservation.objects.get(
+            request=resource_request
+        )
+
+        # An unrelated user attempts cancellation.
+        with self.assertRaises(ValidationError):
+            cancel_approved_reservation(
+                actor=self.other_user,
+                reservation_id=reservation.pk,
+                reason="Unauthorized cancellation attempt",
+            )
+
+        reservation.refresh_from_db()
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        # Everything must remain unchanged.
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.APPROVED,
+        )
+
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.APPROVED,
+        )
+
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.total, 5)
+
+        self.assertEqual(
+            RequestApproval.objects.filter(
+                request=resource_request
+            ).count(),
+            2,
+        )
+    def test_unauthorized_user_cannot_cancel_approved_reservation(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing cancellation permissions",
+        )
+
+        decide_request(
+            approver=self.approver,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.DESTINATION,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        decide_request(
+            approver=self.custodian,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.SOURCE,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        reservation = Reservation.objects.get(
+            request=resource_request
+        )
+
+        # Destination approver is neither requester nor custodian.
+        with self.assertRaises(ValidationError):
+            cancel_approved_reservation(
+                actor=self.approver,
+                reservation_id=reservation.pk,
+                reason="Unauthorized cancellation attempt",
+            )
+
+        reservation.refresh_from_db()
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        # Nothing must change after the rejected attempt.
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.APPROVED,
+        )
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.APPROVED,
+        )
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.blocked, 0)
+
+    def test_cannot_cancel_approved_reservation_twice(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing duplicate cancellation",
+        )
+
+        decide_request(
+            approver=self.approver,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.DESTINATION,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        decide_request(
+            approver=self.custodian,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.SOURCE,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        reservation = Reservation.objects.get(
+            request=resource_request
+        )
+
+        # First cancellation succeeds.
+        cancel_approved_reservation(
+            actor=self.requester,
+            reservation_id=reservation.pk,
+            reason="No longer needed",
+        )
+
+        # Second cancellation must be rejected.
+        with self.assertRaises(ValidationError):
+            cancel_approved_reservation(
+                actor=self.requester,
+                reservation_id=reservation.pk,
+                reason="Trying again",
+            )
+
+        reservation.refresh_from_db()
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.CANCELLED,
+        )
+        self.assertEqual(
+            reservation.cancellation_reason,
+            "No longer needed",
+        )
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.CANCELLED,
+        )
+
+        # Stock was released exactly once.
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.blocked, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    def test_reservation_cancellation_failure_rolls_back_stock(self):
+        from unittest.mock import patch
+
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing cancellation rollback",
+        )
+
+        # Complete both approval stages.
+        decide_request(
+            approver=self.approver,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.DESTINATION,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        decide_request(
+            approver=self.custodian,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.SOURCE,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        reservation = Reservation.objects.get(
+            request=resource_request
+        )
+
+        # Simulate a database save failure after stock changes.
+        with patch.object(
+            Reservation,
+            "save",
+            side_effect=RuntimeError("Simulated save failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                cancel_approved_reservation(
+                    actor=self.requester,
+                    reservation_id=reservation.pk,
+                    reason="Testing rollback",
+                )
+
+        reservation.refresh_from_db()
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        # Reservation and request must remain approved.
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.APPROVED,
+        )
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.APPROVED,
+        )
+        self.assertEqual(reservation.cancellation_reason, "")
+
+        # Held stock must NOT be released.
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.blocked, 0)
+        self.assertEqual(self.asset.stock.total, 5)
