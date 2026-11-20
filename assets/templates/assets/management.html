@@ -1,0 +1,422 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Asset Management | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        header a {
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        main {
+            max-width: 1150px;
+            margin: 35px auto;
+            padding: 0 20px;
+        }
+
+        h2 {
+            color: #17365d;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #627083;
+            margin-bottom: 25px;
+            line-height: 1.6;
+        }
+
+        .filter-panel {
+            background: white;
+            padding: 22px;
+            border-radius: 12px;
+            box-shadow: 0 3px 12px #0000000a;
+            margin-bottom: 25px;
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: end;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        select {
+            min-width: 200px;
+            padding: 11px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            background: white;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 11px 18px;
+            border: none;
+            border-radius: 7px;
+            background: #17365d;
+            color: white;
+            text-decoration: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .btn-secondary {
+            background: #e8eef5;
+            color: #17365d;
+        }
+
+        .result-count {
+            font-weight: bold;
+            color: #52708e;
+            margin-bottom: 18px;
+        }
+
+        .asset-grid {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fill, minmax(275px, 1fr));
+            gap: 20px;
+        }
+
+        .asset-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            border-top: 4px solid #17365d;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        .asset-card h3 {
+            color: #17365d;
+            margin-top: 0;
+        }
+
+        .asset-card p {
+            margin: 10px 0;
+            line-height: 1.5;
+            font-size: 14px;
+            overflow-wrap: anywhere;
+        }
+
+        .publication {
+            display: inline-block;
+            padding: 7px 12px;
+            border-radius: 20px;
+            background: #eef1f5;
+            color: #536175;
+            font-size: 13px;
+            font-weight: bold;
+        }
+
+        .publication-published {
+            background: #e6f6eb;
+            color: #216e39;
+        }
+
+        .publication-draft {
+            background: #fff4d6;
+            color: #8a5700;
+        }
+
+        .publication-withdrawn {
+            background: #fce8e8;
+            color: #991b1b;
+        }
+
+        .stock-panel {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 9px;
+            margin-top: 18px;
+        }
+
+        .stock-item {
+            padding: 12px 7px;
+            border-radius: 7px;
+            background: #f1f5f9;
+            text-align: center;
+        }
+
+        .stock-item strong {
+            display: block;
+            color: #17365d;
+            font-size: 20px;
+            margin-bottom: 5px;
+        }
+
+        .stock-item span {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .empty-state {
+            background: white;
+            padding: 45px 20px;
+            border-radius: 12px;
+            text-align: center;
+            color: #64748b;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 30px;
+        }
+
+        .pagination a {
+            background: white;
+            padding: 10px 15px;
+            color: #17365d;
+            text-decoration: none;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+        }
+
+        footer {
+            padding: 35px;
+            text-align: center;
+            color: #758297;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+
+    <a href="{% url 'dashboard' %}">
+        Back to Dashboard
+    </a>
+</header>
+
+<main>
+
+    <h2>Asset Management</h2>
+
+    <p class="subtitle">
+        View assets assigned to you, monitor stock balances,
+        and track publication status.
+    </p>
+
+    <section class="filter-panel">
+
+        <form method="get">
+
+            <div class="filter-row">
+
+                <div>
+                    <label for="publication">
+                        Publication Status
+                    </label>
+
+                    <select id="publication" name="publication">
+                        <option value="">All Statuses</option>
+
+                        {% for value, label in publication_choices %}
+                            <option
+                                value="{{ value }}"
+                                {% if selected_publication == value %}selected{% endif %}
+                            >
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <button class="btn" type="submit">
+                    Apply Filter
+                </button>
+
+                <a
+                    class="btn btn-secondary"
+                    href="{% url 'asset_management' %}"
+                >
+                    Clear
+                </a>
+
+            </div>
+
+        </form>
+
+    </section>
+
+    <p class="result-count">
+        {{ total_assets }} asset{{ total_assets|pluralize }} assigned to you
+    </p>
+
+    {% if assets %}
+
+        <section class="asset-grid">
+
+            {% for asset in assets %}
+
+                <article class="asset-card">
+
+                    <h3>{{ asset.name }}</h3>
+
+                    <p>
+                        <strong>Asset Tag:</strong>
+                        {{ asset.asset_tag|default:"Not assigned" }}
+                    </p>
+
+                    <p>
+                        <strong>Category:</strong>
+                        {{ asset.category.name }}
+                    </p>
+
+                    <p>
+                        <strong>Department:</strong>
+                        {{ asset.department.name }}
+                    </p>
+
+                    <p>
+                        <strong>Location:</strong>
+                        {{ asset.location }}
+                    </p>
+
+                    <p>
+                        <strong>Condition:</strong>
+                        {{ asset.get_condition_display }}
+                    </p>
+
+                    <p>
+                        <strong>Lifecycle:</strong>
+                        {{ asset.get_lifecycle_display }}
+                    </p>
+
+                    <p>
+                        <strong>Publication:</strong>
+                        <span class="publication publication-{{ asset.publication|lower }}">
+                            {{ asset.get_publication_display }}
+                        </span>
+                    </p>
+
+                    <div class="stock-panel">
+
+                        <div class="stock-item">
+                            <strong>{{ asset.stock.free }}</strong>
+                            <span>Free</span>
+                        </div>
+
+                        <div class="stock-item">
+                            <strong>{{ asset.stock.held }}</strong>
+                            <span>Held</span>
+                        </div>
+
+                        <div class="stock-item">
+                            <strong>{{ asset.stock.in_transit }}</strong>
+                            <span>In Transit</span>
+                        </div>
+
+                        <div class="stock-item">
+                            <strong>{{ asset.stock.in_use }}</strong>
+                            <span>In Use</span>
+                        </div>
+
+                        <div class="stock-item">
+                            <strong>{{ asset.stock.blocked }}</strong>
+                            <span>Blocked</span>
+                        </div>
+
+                        <div class="stock-item">
+                            <strong>{{ asset.stock.retired }}</strong>
+                            <span>Retired</span>
+                        </div>
+
+                    </div>
+
+                </article>
+
+            {% endfor %}
+
+        </section>
+
+    {% else %}
+
+        <div class="empty-state">
+            <h3>No assets found</h3>
+
+            <p>
+                You don't have any assigned assets
+                matching this publication filter.
+            </p>
+        </div>
+
+    {% endif %}
+
+    {% if page_obj.has_other_pages %}
+
+        <nav class="pagination" aria-label="Asset management pages">
+
+            {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}&amp;publication={{ selected_publication|urlencode }}">
+                    Previous
+                </a>
+            {% endif %}
+
+            <span>
+                Page {{ page_obj.number }}
+                of {{ page_obj.paginator.num_pages }}
+            </span>
+
+            {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}&amp;publication={{ selected_publication|urlencode }}">
+                    Next
+                </a>
+            {% endif %}
+
+        </nav>
+
+    {% endif %}
+
+</main>
+
+<footer>
+    KU ResourceSavers | COSC 336 | Group 7
+</footer>
+
+</body>
+</html>

@@ -2,7 +2,7 @@
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.shortcuts import render
-
+from accounts.permissions import role_required
 from .asset_search import search_assets
 from .models import Asset, Category, Department
 
@@ -74,5 +74,61 @@ def asset_catalog(request):
     return render(
         request,
         "assets/catalog.html",
+        context,
+    )
+
+@role_required("Custodian")
+def asset_management_view(request):
+    """
+    Display assets assigned to the current custodian.
+
+    Custodians can only see their own managed assets.
+    """
+
+    assets = (
+        Asset.objects
+        .filter(custodian=request.user)
+        .select_related(
+            "category",
+            "department",
+            "stock",
+        )
+        .order_by("name", "pk")
+    )
+
+    # Optional publication status filter.
+    selected_publication = request.GET.get(
+        "publication", ""
+    ).strip()
+
+    valid_publications = {
+        value
+        for value, label in Asset.Publication.choices
+    }
+
+    if selected_publication in valid_publications:
+        assets = assets.filter(
+            publication=selected_publication
+        )
+    else:
+        selected_publication = ""
+
+    paginator = Paginator(assets, 10)
+
+    page_obj = paginator.get_page(
+        request.GET.get("page")
+    )
+
+    context = {
+        "assets": page_obj.object_list,
+        "page_obj": page_obj,
+        "total_assets": paginator.count,
+        "selected_publication": selected_publication,
+        "publication_choices": Asset.Publication.choices,
+    }
+
+    return render(
+        request,
+        "assets/management.html",
         context,
     )

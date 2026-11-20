@@ -181,16 +181,22 @@
 {% endif %}
 
 
-        {% if is_custodian %}
-        <div class="card">
-            <h3>Asset Management</h3>
-            <p>
-                Register assets and manage
-                department resources.
-            </p>
-            <span class="pending">Coming soon</span>
-        </div>
-        {% endif %}
+
+{% if is_custodian %}
+<div class="card">
+    <h3>Asset Management</h3>
+
+    <p>
+        View assigned assets, monitor stock
+        balances, and manage campus resources.
+    </p>
+
+    <a href="{% url 'asset_management' %}">
+        Manage My Assets
+    </a>
+</div>
+{% endif %}
+
 
 
 {% if is_approver or is_custodian %}
