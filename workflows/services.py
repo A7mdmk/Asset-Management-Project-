@@ -648,3 +648,143 @@ def dispatch_transfer(*, actor, transfer_id):
     )
 
     return transfer
+
+@transaction.atomic
+def confirm_transfer_receipt(*, actor, transfer_id):
+    if not actor.is_authenticated or not actor.is_active:
+        raise ValidationError(
+            "An active account is required."
+        )
+
+    # Find the request before acquiring database locks.
+    transfer_reference = Transfer.objects.get(
+        pk=transfer_id
+    )
+
+    reservation_reference = Reservation.objects.get(
+        pk=transfer_reference.reservation_id
+    )
+
+    # Follow the existing lock order.
+    resource_request = (
+        ResourceRequest.objects.select_for_update()
+        .get(pk=reservation_reference.request_id)
+    )
+
+    asset = (
+        Asset.objects.select_for_update()
+        .get(pk=resource_request.asset_id)
+    )
+
+    reservation = (
+        Reservation.objects.select_for_update()
+        .get(pk=reservation_reference.pk)
+    )
+
+    transfer = (
+        Transfer.objects.select_for_update()
+        .get(pk=transfer_id)
+    )
+
+    # Verify approval and transfer relationships.
+    if transfer.reservation_id != reservation.pk:
+        raise ValidationError(
+            "Transfer reservation mismatch."
+        )
+
+    if reservation.request_id != resource_request.pk:
+        raise ValidationError(
+            "Reservation request mismatch."
+        )
+
+    if resource_request.status != ResourceRequest.Status.APPROVED:
+        raise ValidationError(
+            "The resource request must be approved."
+        )
+
+    if reservation.status != Reservation.Status.CONVERTED:
+        raise ValidationError(
+            "The reservation must be converted."
+        )
+
+    # Verify the destination department.
+    if not resource_request.destination_department_id:
+        raise ValidationError(
+            "Destination department is required."
+        )
+
+    if not resource_request.destination_department.is_active:
+        raise ValidationError(
+            "The destination department is inactive."
+        )
+
+    # Only an authorized destination approver can confirm receipt.
+    if not actor.groups.filter(name="Approver/Admin").exists():
+        raise ValidationError(
+            "Destination approver role is required."
+        )
+
+    authorized = DepartmentApprover.objects.filter(
+        user=actor,
+        department_id=resource_request.destination_department_id,
+        is_active=True,
+    ).exists()
+
+    if not authorized:
+        raise ValidationError(
+            "Not authorized for the destination department."
+        )
+
+    if transfer.status != Transfer.Status.DISPATCHED:
+        raise ValidationError(
+            "Only dispatched transfers can be received."
+        )
+
+    if transfer.dispatched_at is None:
+        raise ValidationError(
+            "The transfer has no dispatch timestamp."
+        )
+
+    if transfer.received_at is not None or transfer.received_by_id:
+        raise ValidationError(
+            "This transfer has already been received."
+        )
+
+    stock = (
+        StockBalance.objects.select_for_update()
+        .get(asset=asset)
+    )
+
+    if stock.in_transit < transfer.quantity:
+        raise ValidationError(
+            "Insufficient in-transit stock for receipt."
+        )
+
+    # Receive stock exactly once: InTransit -> InUse.
+    stock.in_transit -= transfer.quantity
+    stock.in_use += transfer.quantity
+
+    stock.full_clean()
+    stock.save(
+        update_fields=[
+            "in_transit",
+            "in_use",
+            "updated_at",
+        ]
+    )
+
+    # Record receipt confirmation.
+    transfer.status = Transfer.Status.RECEIVED
+    transfer.received_by = actor
+    transfer.received_at = timezone.now()
+
+    transfer.full_clean()
+    transfer.save(
+        update_fields=[
+            "status",
+            "received_by",
+            "received_at",
+        ]
+    )
+
+    return transfer
