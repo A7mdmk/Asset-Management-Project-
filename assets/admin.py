@@ -2,7 +2,13 @@
 from django.contrib import admin
 from django.db import transaction
 
-from .models import Asset, Category, Department, StockBalance
+from .models import (
+    Asset,
+    Category,
+    Department,
+    StockBalance,
+    StockMovement,
+)
 from .services import initialize_stock
 
 
@@ -89,6 +95,61 @@ class StockBalanceAdmin(admin.ModelAdmin):
     )
 
     def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+# ==========================================================
+# STOCK MOVEMENT HISTORY — READ ONLY
+# ==========================================================
+
+@admin.register(StockMovement)
+class StockMovementAdmin(admin.ModelAdmin):
+
+    list_display = (
+        "asset",
+        "movement_type",
+        "source",
+        "destination",
+        "quantity",
+        "performed_by",
+        "created_at",
+    )
+
+    list_filter = (
+        "movement_type",
+        "source",
+        "destination",
+        "created_at",
+    )
+
+    search_fields = (
+        "asset__name",
+        "asset__asset_tag",
+        "reference_type",
+        "reference_id",
+    )
+
+    readonly_fields = (
+        "asset",
+        "movement_type",
+        "quantity",
+        "source",
+        "destination",
+        "performed_by",
+        "reference_type",
+        "reference_id",
+        "notes",
+        "created_at",
+    )
+
+    ordering = ("-created_at", "-pk")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False
 
     def has_delete_permission(self, request, obj=None):

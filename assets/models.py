@@ -791,3 +791,159 @@ class AssetDisposition(models.Model):
             f"{self.asset.name} "
             f"({self.disposition_type})"
         )
+
+# ==========================================================
+# STOCK MOVEMENT HISTORY
+# ==========================================================
+
+class StockMovement(models.Model):
+
+    class Bucket(models.TextChoices):
+        FREE = "Free", "Free"
+        HELD = "Held", "Held"
+        IN_TRANSIT = "InTransit", "In Transit"
+        IN_USE = "InUse", "In Use"
+        BLOCKED = "Blocked", "Blocked"
+        RETIRED = "Retired", "Retired"
+
+    class MovementType(models.TextChoices):
+        REGISTRATION = "Registration", "Registration"
+        RESERVATION = "Reservation", "Reservation"
+        RESERVATION_CANCEL = (
+            "ReservationCancel",
+            "Reservation Cancellation",
+        )
+        DISPATCH = "Dispatch", "Dispatch"
+        RECEIPT = "Receipt", "Receipt"
+        TRANSFER_CANCEL = (
+            "TransferCancel",
+            "Transfer Cancellation",
+        )
+        MAINTENANCE_REPORT = (
+            "MaintenanceReport",
+            "Maintenance Report",
+        )
+        REPAIR_COMPLETE = (
+            "RepairComplete",
+            "Repair Completion",
+        )
+        MAINTENANCE_CANCEL = (
+            "MaintenanceCancel",
+            "Maintenance Cancellation",
+        )
+        DISPOSITION = "Disposition", "Disposition"
+
+    asset = models.ForeignKey(
+        Asset,
+        on_delete=models.PROTECT,
+        related_name="stock_movements",
+    )
+
+    movement_type = models.CharField(
+        max_length=30,
+        choices=MovementType.choices,
+    )
+
+    quantity = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)],
+    )
+
+    # Blank source represents newly registered stock.
+    source = models.CharField(
+        max_length=20,
+        choices=Bucket.choices,
+        blank=True,
+    )
+
+    destination = models.CharField(
+        max_length=20,
+        choices=Bucket.choices,
+    )
+
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="stock_movements",
+        null=True,
+        blank=True,
+    )
+
+    # Example: Reservation, Transfer, Maintenance, Disposition
+    reference_type = models.CharField(
+        max_length=30,
+        blank=True,
+    )
+
+    # Stored as text to support different workflow key types.
+    reference_id = models.CharField(
+        max_length=100,
+        blank=True,
+    )
+
+    notes = models.TextField(
+        max_length=1000,
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+        indexes = [
+            models.Index(
+                fields=["asset", "created_at"],
+                name="stock_move_asset_time_idx",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+
+        errors = {}
+
+        if self.quantity is not None and self.quantity < 1:
+            errors["quantity"] = (
+                "Movement quantity must be at least 1."
+            )
+
+        if self.source and self.source == self.destination:
+            errors["destination"] = (
+                "Source and destination must be different."
+            )
+
+        if (
+            self.movement_type == self.MovementType.REGISTRATION
+            and self.source
+        ):
+            errors["source"] = (
+                "Registration must not have a source bucket."
+            )
+
+        if (
+            self.movement_type != self.MovementType.REGISTRATION
+            and not self.source
+        ):
+            errors["source"] = (
+                "A source bucket is required."
+            )
+
+        if bool(self.reference_type) != bool(self.reference_id):
+            errors["reference_id"] = (
+                "Reference type and ID must be provided together."
+            )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        source = self.source or "New"
+
+        return (
+            f"{self.asset.name}: "
+            f"{source} -> {self.destination} "
+            f"({self.quantity})"
+        )
