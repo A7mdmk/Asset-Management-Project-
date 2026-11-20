@@ -1,6 +1,7 @@
 
 from assets.models import Asset, StockBalance
 import json
+from google.genai import types
 from .gemini_client import GEMINI_MODEL, get_gemini_client
 
 def get_available_assets():
@@ -69,14 +70,24 @@ Rules:
 - Do not invent assets, IDs, or quantities.
 - Consider the name, description, category, and location.
 - Do not approve requests or reserve stock.
-- Return only the asset IDs as a JSON array.
+- Return a JSON array of objects.
+- Each object must contain "id" and "explanation".
+- "id" must exactly match an asset ID from the provided JSON.
+- "explanation" must briefly explain why the asset matches the request.
+- Ground explanations only in the provided asset information.
+- Do not invent specifications or features.
+- Rank the best matches first.
 """
 
     client = get_gemini_client()
 
+
     response = client.models.generate_content(
         model=GEMINI_MODEL,
         contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+        ),
     )
 
     try:
@@ -94,16 +105,45 @@ Rules:
     recommendations = []
     seen = set()
 
-    for asset_id in suggested_ids:
+
+    for suggestion in suggested_ids:
+        explanation = None
+
+        # Support the new format with AI explanations.
+        if isinstance(suggestion, dict):
+            asset_id = suggestion.get("id")
+            explanation = suggestion.get("explanation")
+
+        # Preserve compatibility with existing ID-only responses.
+        elif isinstance(suggestion, str):
+            asset_id = suggestion
+
+        else:
+            continue
+
         if not isinstance(asset_id, str):
             continue
 
-        if asset_id in assets_by_id and asset_id not in seen:
-            recommendations.append(assets_by_id[asset_id])
-            seen.add(asset_id)
+        if asset_id not in assets_by_id or asset_id in seen:
+            continue
+
+        asset = assets_by_id[asset_id].copy()
+
+        # Accept only short, non-empty explanation text.
+        if isinstance(explanation, str) and explanation.strip():
+            asset["explanation"] = explanation.strip()[:500]
+        else:
+            asset["explanation"] = (
+                "Recommended based on the available "
+                "asset information."
+            )
+
+        recommendations.append(asset)
+        seen.add(asset_id)
 
         if len(recommendations) == 3:
             break
+
 
     return {
         "recommendations": recommendations,

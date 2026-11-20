@@ -6,7 +6,9 @@ from google import genai
 from google.genai import types
 
 load_dotenv()
+
 GEMINI_MODEL = "gemini-3.5-flash-lite"
+
 
 def get_gemini_client():
     api_key = os.getenv("GEMINI_API_KEY")
@@ -17,7 +19,9 @@ def get_gemini_client():
     return genai.Client(
         api_key=api_key,
         http_options=types.HttpOptions(
-            timeout=15000,
-            retry_options=types.HttpRetryOptions(attempts=1),
+            timeout=60000,
+            retry_options=types.HttpRetryOptions(
+                attempts=2,
+            ),
         ),
     )
