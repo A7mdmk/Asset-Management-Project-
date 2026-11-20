@@ -292,6 +292,20 @@ class Transfer(models.Model):
 
 
     dispute_reason = models.TextField(blank=True)
+
+    disputed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="disputed_transfers",
+        null=True,
+        blank=True,
+    )
+
+    disputed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
     cancellation_reason = models.TextField(blank=True)
 
     def clean(self):
