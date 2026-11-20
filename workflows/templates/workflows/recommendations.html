@@ -1,0 +1,146 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Recommendations | KU ResourceSavers</title>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+        }
+
+        header h1 { margin: 0; }
+
+        main {
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .panel, .asset-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        h2, h3 { color: #17365d; }
+
+        textarea {
+            width: 100%;
+            padding: 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font: inherit;
+            resize: vertical;
+        }
+
+        button {
+            margin-top: 15px;
+            padding: 12px 22px;
+            background: #17365d;
+            color: white;
+            border: none;
+            border-radius: 7px;
+            cursor: pointer;
+        }
+
+        button:hover { background: #28558a; }
+
+        .message {
+            padding: 12px;
+            background: #eef3fa;
+            border-radius: 7px;
+        }
+
+        .error {
+            background: #fff0f0;
+            color: #a32424;
+        }
+
+        .details {
+            color: #5c6d81;
+            line-height: 1.7;
+        }
+
+        a { color: #17365d; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+</header>
+
+<main>
+    <p>
+        <a href="{% url 'dashboard' %}">Back to Dashboard</a>
+    </p>
+
+    <section class="panel">
+        <h2>AI Asset Recommendations</h2>
+
+        <p>Describe the campus resource you need.</p>
+
+        <form method="post">
+            {% csrf_token %}
+
+            <label for="user_need">Your request</label>
+
+            <textarea
+                id="user_need"
+                name="user_need"
+                rows="4"
+                maxlength="500"
+                required
+                placeholder="Example: I need a monitor for my computer lab."
+            >{{ user_need|default:'' }}</textarea>
+
+            <button type="submit">Find Recommendations</button>
+        </form>
+    </section>
+
+    {% if error %}
+    <p class="message error">{{ error }}</p>
+    {% endif %}
+
+    {% if message %}
+    <p class="message">{{ message }}</p>
+    {% endif %}
+
+    {% if recommendations %}
+    <h2>Recommended Assets</h2>
+
+    {% for asset in recommendations %}
+    <section class="asset-card">
+        <h3>{{ asset.name }}</h3>
+
+        <p>{{ asset.description }}</p>
+
+        <div class="details">
+            <strong>Category:</strong> {{ asset.category }}<br>
+            <strong>Department:</strong> {{ asset.department }}<br>
+            <strong>Location:</strong> {{ asset.location }}<br>
+            <strong>Available:</strong> {{ asset.available_quantity }}
+        </div>
+    </section>
+    {% endfor %}
+    {% endif %}
+</main>
+
+</body>
+</html>
