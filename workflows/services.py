@@ -278,3 +278,28 @@ def decide_request(
     )
 
     return resource_request
+
+@transaction.atomic
+def cancel_pending_request(*, requester, request_id):
+    if not requester.is_authenticated or not requester.is_active:
+        raise ValidationError("An active account is required.")
+
+    resource_request = ResourceRequest.objects.select_for_update().get(
+        pk=request_id
+    )
+
+    if resource_request.requester_id != requester.pk:
+        raise ValidationError(
+            "Only the requester can cancel their pending request."
+        )
+
+    if resource_request.status != ResourceRequest.Status.PENDING:
+        raise ValidationError(
+            "Only pending requests can be cancelled."
+        )
+
+    resource_request.status = ResourceRequest.Status.CANCELLED
+    resource_request.save(update_fields=["status", "updated_at"])
+
+    # Pending requests do not reserve stock.
+    return resource_request

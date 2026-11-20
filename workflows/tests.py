@@ -12,7 +12,11 @@ from assets.models import Asset, Category, Department
 from assets.services import register_asset
 
 from .models import ResourceRequest, RequestApproval
-from .services import submit_request, decide_request
+from .services import (
+    submit_request,
+    decide_request,
+    cancel_pending_request,
+)
 
 
 class WorkflowModelTests(TestCase):
@@ -753,4 +757,174 @@ class ApprovalWorkflowTests(SubmitRequestTests):
                 request=resource_request,
                 stage=RequestApproval.Stage.SOURCE,
             ).exists()
+        )
+
+    def test_requester_can_cancel_pending_request(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing pending cancellation",
+        )
+
+        result = cancel_pending_request(
+            requester=self.requester,
+            request_id=resource_request.pk,
+        )
+
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            result.status,
+            ResourceRequest.Status.CANCELLED,
+        )
+
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.CANCELLED,
+        )
+
+        # Pending cancellation must not change stock.
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+        # Cancellation does not create an approval.
+        self.assertEqual(
+            RequestApproval.objects.filter(
+                request=resource_request
+            ).count(),
+            0,
+        )
+
+    def test_other_user_cannot_cancel_pending_request(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing unauthorized cancellation",
+        )
+
+        # Another user attempts to cancel the request.
+        with self.assertRaises(ValidationError):
+            cancel_pending_request(
+                requester=self.other_user,
+                request_id=resource_request.pk,
+            )
+
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        # The request and stock must remain unchanged.
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.PENDING,
+        )
+
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+        self.assertEqual(
+            RequestApproval.objects.filter(
+                request=resource_request
+            ).count(),
+            0,
+        )
+
+    def test_pending_request_cannot_be_cancelled_twice(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing duplicate cancellation",
+        )
+
+        # First cancellation succeeds.
+        cancel_pending_request(
+            requester=self.requester,
+            request_id=resource_request.pk,
+        )
+
+        # Second cancellation must be rejected.
+        with self.assertRaises(ValidationError):
+            cancel_pending_request(
+                requester=self.requester,
+                request_id=resource_request.pk,
+            )
+
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.CANCELLED,
+        )
+
+        # Neither cancellation changes stock.
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+        self.assertEqual(
+            RequestApproval.objects.filter(
+                request=resource_request
+            ).count(),
+            0,
+        )
+
+    def test_approved_request_cannot_use_pending_cancellation(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing cancellation after approval",
+        )
+
+        # Stage 1: Destination acceptance
+        decide_request(
+            approver=self.approver,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.DESTINATION,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        # Stage 2: Source custodian release
+        decide_request(
+            approver=self.custodian,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.SOURCE,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        # Pending-only cancellation must be rejected.
+        with self.assertRaises(ValidationError):
+            cancel_pending_request(
+                requester=self.requester,
+                request_id=resource_request.pk,
+            )
+
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.APPROVED,
+        )
+
+        # The existing reservation must remain intact.
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.total, 5)
+
+        self.assertEqual(
+            RequestApproval.objects.filter(
+                request=resource_request
+            ).count(),
+            2,
         )
