@@ -7,7 +7,7 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
-from assets.models import Asset
+from assets.models import Asset, Department
 
 
 def default_request_expiry():
@@ -33,6 +33,14 @@ class ResourceRequest(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="resource_requests"
+    )
+
+    destination_department = models.ForeignKey(
+        Department,
+        on_delete=models.PROTECT,
+        related_name="incoming_resource_requests",
+        null=True,
+        blank=True,
     )
 
     quantity = models.PositiveIntegerField(
@@ -74,6 +82,14 @@ class ResourceRequest(models.Model):
         if self.requester_id and not self.requester.is_active:
             errors["requester"] = "Requester must be active."
 
+        if (
+            self.destination_department_id
+            and not self.destination_department.is_active
+        ):
+            errors["destination_department"] = (
+                "Destination department must be active."
+            )
+
         if errors:
             raise ValidationError(errors)
 
@@ -90,6 +106,10 @@ class RequestApproval(models.Model):
         APPROVED = "Approved", "Approved"
         REJECTED = "Rejected", "Rejected"
 
+    class Stage(models.TextChoices):
+        DESTINATION = "Destination", "Destination Acceptance"
+        SOURCE = "Source", "Source Release"
+
     request = models.ForeignKey(
         ResourceRequest,
         on_delete=models.PROTECT,
@@ -105,6 +125,12 @@ class RequestApproval(models.Model):
     decision = models.CharField(
         max_length=20,
         choices=Decision.choices
+    )
+
+    stage = models.CharField(
+        max_length=20,
+        choices=Stage.choices,
+        default=Stage.DESTINATION
     )
 
     comment = models.TextField(blank=True)
@@ -133,5 +159,5 @@ class RequestApproval(models.Model):
     def __str__(self):
         return (
             f"Request #{self.request_id}: "
-            f"{self.decision} by {self.approver}"
+            f"{self.stage} - {self.decision} by {self.approver}"
         )

@@ -2,13 +2,21 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
-
+from accounts.models import DepartmentApprover
 from assets.models import Asset, StockBalance
 from .models import ResourceRequest, RequestApproval
 
 
+
 @transaction.atomic
-def submit_request(*, requester, asset_id, quantity, reason):
+def submit_request(
+    *,
+    requester,
+    asset_id,
+    destination_department_id,
+    quantity,
+    reason,
+):
     if not requester.is_authenticated or not requester.is_active:
         raise ValidationError("An active account is required.")
 
@@ -41,14 +49,37 @@ def submit_request(*, requester, asset_id, quantity, reason):
                 "Individual assets can only be requested one at a time."
             )
 
-    stock = StockBalance.objects.select_for_update().get(asset=asset)
+    # Check the destination department.
+    if destination_department_id is None:
+        raise ValidationError(
+            "A destination department is required."
+        )
+
+    from assets.models import Department
+
+    destination_department = Department.objects.get(
+        pk=destination_department_id
+    )
+
+    if not destination_department.is_active:
+        raise ValidationError(
+            "Destination department must be active."
+        )
+
+    # Check available stock without reserving it.
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
 
     if stock.free < quantity:
-        raise ValidationError("Not enough free stock is available.")
+        raise ValidationError(
+            "Not enough free stock is available."
+        )
 
     resource_request = ResourceRequest(
         asset=asset,
         requester=requester,
+        destination_department=destination_department,
         quantity=quantity,
         reason=reason,
     )
@@ -59,16 +90,24 @@ def submit_request(*, requester, asset_id, quantity, reason):
     return resource_request
 
 
+
 @transaction.atomic
-def decide_request(*, approver, request_id, decision, comment=""):
+def decide_request(
+    *,
+    approver,
+    request_id,
+    stage,
+    decision,
+    comment="",
+):
     if not approver.is_authenticated or not approver.is_active:
         raise ValidationError("An active account is required.")
 
-    if not (
-        approver.is_superuser
-        or approver.groups.filter(name="Approver/Admin").exists()
+    if stage not in (
+        RequestApproval.Stage.DESTINATION,
+        RequestApproval.Stage.SOURCE,
     ):
-        raise ValidationError("Only authorized approvers can decide requests.")
+        raise ValidationError("Invalid approval stage.")
 
     if decision not in (
         RequestApproval.Decision.APPROVED,
@@ -85,61 +124,157 @@ def decide_request(*, approver, request_id, decision, comment=""):
     if resource_request.status != ResourceRequest.Status.PENDING:
         raise ValidationError("Only pending requests can be decided.")
 
-    # Expire overdue requests before any approval or stock changes.
     if resource_request.expires_at <= timezone.now():
         resource_request.status = ResourceRequest.Status.EXPIRED
-        resource_request.save(update_fields=["status", "updated_at"])
+        resource_request.save(
+            update_fields=["status", "updated_at"]
+        )
         return resource_request
 
     if resource_request.requester_id == approver.pk:
-        raise ValidationError("You cannot approve your own request.")
+        raise ValidationError(
+            "Users cannot approve their own requests."
+        )
 
-    if resource_request.approvals.exists():
-        raise ValidationError("This request already has a decision.")
+    if not resource_request.destination_department_id:
+        raise ValidationError(
+            "The request has no destination department."
+        )
 
-    if decision == RequestApproval.Decision.APPROVED:
+    if not resource_request.destination_department.is_active:
+        raise ValidationError(
+            "The destination department is inactive."
+        )
+
+    previous_approvals = list(
+        resource_request.approvals.order_by("created_at", "pk")
+    )
+
+    if any(item.stage == stage for item in previous_approvals):
+        raise ValidationError(
+            "This approval stage has already been decided."
+        )
+
+    if any(item.approver_id == approver.pk for item in previous_approvals):
+        raise ValidationError(
+            "Destination and source approvers must be different."
+        )
+
+    if decision == RequestApproval.Decision.REJECTED:
+        if not comment.strip():
+            raise ValidationError(
+                "A reason is required when rejecting a request."
+            )
+
+    if stage == RequestApproval.Stage.DESTINATION:
+        if previous_approvals:
+            raise ValidationError(
+                "Destination acceptance must happen first."
+            )
+
+        if not approver.groups.filter(
+            name="Approver/Admin"
+        ).exists():
+            raise ValidationError(
+                "Destination approval role is required."
+            )
+
+        authorized = DepartmentApprover.objects.filter(
+            user=approver,
+            department_id=resource_request.destination_department_id,
+            is_active=True,
+        ).exists()
+
+        if not authorized:
+            raise ValidationError(
+                "Not authorized for this destination department."
+            )
+
+        # Destination acceptance does not reserve stock.
+
+    elif stage == RequestApproval.Stage.SOURCE:
+        destination_approval = next(
+            (
+                item for item in previous_approvals
+                if item.stage == RequestApproval.Stage.DESTINATION
+                and item.decision == RequestApproval.Decision.APPROVED
+            ),
+            None,
+        )
+
+        if destination_approval is None:
+            raise ValidationError(
+                "Destination acceptance is required first."
+            )
+
         asset = Asset.objects.select_for_update().get(
             pk=resource_request.asset_id
         )
 
-        if asset.publication != Asset.Publication.PUBLISHED:
-            raise ValidationError("The asset is no longer published.")
+        if asset.custodian_id != approver.pk:
+            raise ValidationError(
+                "Only the assigned source custodian can release this asset."
+            )
 
-        if asset.lifecycle != Asset.Lifecycle.ACTIVE:
-            raise ValidationError("The asset is no longer active.")
+        if not approver.groups.filter(name="Custodian").exists():
+            raise ValidationError(
+                "The source custodian role is required."
+            )
 
-        if asset.condition not in (
-            Asset.Condition.GOOD,
-            Asset.Condition.FAIR,
-        ):
-            raise ValidationError("The asset is no longer eligible.")
+        if decision == RequestApproval.Decision.APPROVED:
+            if asset.publication != Asset.Publication.PUBLISHED:
+                raise ValidationError(
+                    "The asset is no longer published."
+                )
 
-        stock = StockBalance.objects.select_for_update().get(
-            asset=asset
-        )
+            if asset.lifecycle != Asset.Lifecycle.ACTIVE:
+                raise ValidationError(
+                    "The asset is no longer active."
+                )
 
-        if stock.free < resource_request.quantity:
-            raise ValidationError("Insufficient free stock.")
+            if asset.condition not in (
+                Asset.Condition.GOOD,
+                Asset.Condition.FAIR,
+            ):
+                raise ValidationError(
+                    "The asset is no longer eligible."
+                )
 
-        stock.free -= resource_request.quantity
-        stock.held += resource_request.quantity
-        stock.full_clean()
-        stock.save(update_fields=["free", "held", "updated_at"])
+            stock = StockBalance.objects.select_for_update().get(
+                asset=asset
+            )
 
-        resource_request.status = ResourceRequest.Status.APPROVED
+            if stock.free < resource_request.quantity:
+                raise ValidationError(
+                    "Insufficient free stock."
+                )
 
-    else:
-        resource_request.status = ResourceRequest.Status.REJECTED
+            stock.free -= resource_request.quantity
+            stock.held += resource_request.quantity
+            stock.full_clean()
+            stock.save(
+                update_fields=["free", "held", "updated_at"]
+            )
 
     approval = RequestApproval(
         request=resource_request,
         approver=approver,
+        stage=stage,
         decision=decision,
         comment=comment,
     )
+
     approval.full_clean()
     approval.save()
 
-    resource_request.save(update_fields=["status", "updated_at"])
+    if decision == RequestApproval.Decision.REJECTED:
+        resource_request.status = ResourceRequest.Status.REJECTED
+
+    elif stage == RequestApproval.Stage.SOURCE:
+        resource_request.status = ResourceRequest.Status.APPROVED
+
+    resource_request.save(
+        update_fields=["status", "updated_at"]
+    )
 
     return resource_request
