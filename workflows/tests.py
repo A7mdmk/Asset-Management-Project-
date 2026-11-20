@@ -11,7 +11,7 @@ from accounts.models import DepartmentApprover
 from assets.models import Asset, Category, Department
 from assets.services import register_asset
 
-from .models import ResourceRequest, RequestApproval
+from .models import ResourceRequest, RequestApproval, Reservation
 from .services import (
     submit_request,
     decide_request,
@@ -927,4 +927,147 @@ class ApprovalWorkflowTests(SubmitRequestTests):
                 request=resource_request
             ).count(),
             2,
+        )
+
+    def test_final_source_approval_creates_reservation(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing reservation creation",
+        )
+
+        # Stage 1: Destination acceptance
+        decide_request(
+            approver=self.approver,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.DESTINATION,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        # No reservation before final source approval.
+        self.assertFalse(
+            Reservation.objects.filter(
+                request=resource_request
+            ).exists()
+        )
+
+        self.asset.stock.refresh_from_db()
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+
+        # Stage 2: Final source release
+        decide_request(
+            approver=self.custodian,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.SOURCE,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        resource_request.refresh_from_db()
+        reservation = Reservation.objects.get(
+            request=resource_request
+        )
+
+        source_approval = RequestApproval.objects.get(
+            request=resource_request,
+            stage=RequestApproval.Stage.SOURCE,
+        )
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.APPROVED,
+        )
+        self.assertEqual(reservation.quantity, 2)
+        self.assertEqual(
+            reservation.source_approval_id,
+            source_approval.pk,
+        )
+
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.APPROVED,
+        )
+
+        self.asset.stock.refresh_from_db()
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.total, 5)
+
+        # Exactly one reservation exists.
+        self.assertEqual(
+            Reservation.objects.filter(
+                request=resource_request
+            ).count(),
+            1,
+        )
+
+    def test_failed_reservation_save_rolls_back_approval_and_stock(self):
+        resource_request = submit_request(
+            requester=self.requester,
+            asset_id=self.asset.pk,
+            destination_department_id=self.department.pk,
+            quantity=2,
+            reason="Testing reservation rollback",
+        )
+
+        # Stage 1: Destination accepts the request.
+        decide_request(
+            approver=self.approver,
+            request_id=resource_request.pk,
+            stage=RequestApproval.Stage.DESTINATION,
+            decision=RequestApproval.Decision.APPROVED,
+        )
+
+        # Stage 2: Simulate failure when saving the reservation.
+        with patch.object(
+            Reservation,
+            "save",
+            side_effect=RuntimeError("Simulated reservation failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                decide_request(
+                    approver=self.custodian,
+                    request_id=resource_request.pk,
+                    stage=RequestApproval.Stage.SOURCE,
+                    decision=RequestApproval.Decision.APPROVED,
+                )
+
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        # The final approval must be rolled back.
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.PENDING,
+        )
+
+        # Stock must return to its original values.
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+        # The earlier destination approval remains.
+        self.assertEqual(
+            RequestApproval.objects.filter(
+                request=resource_request,
+                stage=RequestApproval.Stage.DESTINATION,
+            ).count(),
+            1,
+        )
+
+        # The failed source approval must not exist.
+        self.assertFalse(
+            RequestApproval.objects.filter(
+                request=resource_request,
+                stage=RequestApproval.Stage.SOURCE,
+            ).exists()
+        )
+
+        # No incomplete reservation may remain.
+        self.assertFalse(
+            Reservation.objects.filter(
+                request=resource_request
+            ).exists()
         )
