@@ -18,6 +18,7 @@ from .services import (
     cancel_pending_request,
     cancel_approved_reservation,
     arrange_transfer,
+    dispatch_transfer,
 )
 
 
@@ -1777,3 +1778,206 @@ class ApprovalWorkflowTests(SubmitRequestTests):
             Reservation.Status.APPROVED,
         )
         self.assertEqual(self.asset.stock.held, 2)
+
+    # ==========================================================
+    # TRANSFER DISPATCH TESTS
+    # ==========================================================
+
+    def _create_arranged_transfer_for_dispatch(self):
+        reservation = (
+            self._create_approved_reservation_for_transfer()
+        )
+
+        transfer = arrange_transfer(
+            actor=self.custodian,
+            reservation_id=reservation.pk,
+        )
+
+        return transfer
+
+    def test_dispatch_moves_held_stock_to_in_transit(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        result = dispatch_transfer(
+            actor=self.custodian,
+            transfer_id=transfer.pk,
+        )
+
+        result.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(result.status, Transfer.Status.DISPATCHED)
+        self.assertIsNotNone(result.dispatched_at)
+        self.assertEqual(result.quantity, 2)
+
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.in_transit, 2)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    def test_unauthorized_user_cannot_dispatch_transfer(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        with self.assertRaises(ValidationError):
+            dispatch_transfer(
+                actor=self.requester,
+                transfer_id=transfer.pk,
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(transfer.status, Transfer.Status.ARRANGED)
+        self.assertIsNone(transfer.dispatched_at)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.in_transit, 0)
+
+    def test_cannot_dispatch_same_transfer_twice(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        dispatch_transfer(
+            actor=self.custodian,
+            transfer_id=transfer.pk,
+        )
+
+        with self.assertRaises(ValidationError):
+            dispatch_transfer(
+                actor=self.custodian,
+                transfer_id=transfer.pk,
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(transfer.status, Transfer.Status.DISPATCHED)
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.in_transit, 2)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    def test_dispatch_requires_custodian_role(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        self.custodian.groups.clear()
+
+        with self.assertRaises(ValidationError):
+            dispatch_transfer(
+                actor=self.custodian,
+                transfer_id=transfer.pk,
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(transfer.status, Transfer.Status.ARRANGED)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.in_transit, 0)
+
+    def test_inactive_custodian_cannot_dispatch(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        self.custodian.is_active = False
+        self.custodian.save(update_fields=["is_active"])
+
+        with self.assertRaises(ValidationError):
+            dispatch_transfer(
+                actor=self.custodian,
+                transfer_id=transfer.pk,
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(transfer.status, Transfer.Status.ARRANGED)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.in_transit, 0)
+
+    def test_dispatch_rejects_insufficient_held_stock(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        stock = self.asset.stock
+        stock.refresh_from_db()
+
+        # Simulate an inconsistent stock allocation.
+        stock.held = 1
+        stock.free = 4
+        stock.save(update_fields=["held", "free"])
+
+        with self.assertRaises(ValidationError):
+            dispatch_transfer(
+                actor=self.custodian,
+                transfer_id=transfer.pk,
+            )
+
+        transfer.refresh_from_db()
+        stock.refresh_from_db()
+
+        self.assertEqual(transfer.status, Transfer.Status.ARRANGED)
+        self.assertIsNone(transfer.dispatched_at)
+        self.assertEqual(stock.free, 4)
+        self.assertEqual(stock.held, 1)
+        self.assertEqual(stock.in_transit, 0)
+        self.assertEqual(stock.total, 5)
+
+    def test_dispatch_failure_rolls_back_stock(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        # Simulate a failure after stock is updated but
+        # before the transfer record is saved.
+        with patch.object(
+            Transfer,
+            "save",
+            side_effect=RuntimeError("Simulated dispatch save failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                dispatch_transfer(
+                    actor=self.custodian,
+                    transfer_id=transfer.pk,
+                )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(transfer.status, Transfer.Status.ARRANGED)
+        self.assertIsNone(transfer.dispatched_at)
+
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.in_transit, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    def test_dispatch_preserves_reservation_and_approval_history(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        dispatch_transfer(
+            actor=self.custodian,
+            transfer_id=transfer.pk,
+        )
+
+        reservation = transfer.reservation
+        reservation.refresh_from_db()
+
+        resource_request = reservation.request
+        resource_request.refresh_from_db()
+
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.CONVERTED,
+        )
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.APPROVED,
+        )
+        self.assertEqual(
+            RequestApproval.objects.filter(
+                request=resource_request
+            ).count(),
+            2,
+        )
+
+        self.assertEqual(
+            Transfer.objects.filter(
+                reservation=reservation
+            ).count(),
+            1,
+        )
