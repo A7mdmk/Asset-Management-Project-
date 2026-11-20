@@ -1,29 +1,63 @@
 
-from django.db import models
+import uuid
 
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import (
+    FileExtensionValidator,
+    MinValueValidator,
+)
+from django.db import models
+from django.utils import timezone
+
+
+# ==========================================================
+# DEPARTMENT
+# ==========================================================
 
 class Department(models.Model):
-    name = models.CharField(max_length=120, unique=True)
-    code = models.CharField(max_length=20, unique=True)
-    is_active = models.BooleanField(default=True)
+    name = models.CharField(
+        max_length=120,
+        unique=True,
+    )
+
+    code = models.CharField(
+        max_length=20,
+        unique=True,
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+    )
 
     def __str__(self):
         return self.name
 
+
+# ==========================================================
+# CATEGORY
+# ==========================================================
 
 class Category(models.Model):
-    name = models.CharField(max_length=120, unique=True)
-    description = models.TextField(blank=True)
+    name = models.CharField(
+        max_length=120,
+        unique=True,
+    )
+
+    description = models.TextField(
+        blank=True,
+    )
 
     def __str__(self):
         return self.name
 
-import uuid
-from django.conf import settings
-from django.core.validators import MinValueValidator
 
+# ==========================================================
+# ASSET
+# ==========================================================
 
 class Asset(models.Model):
+
     class TrackingMode(models.TextChoices):
         INDIVIDUAL = "Individual", "Individual"
         LOT = "Lot", "Lot"
@@ -48,66 +82,105 @@ class Asset(models.Model):
         WITHDRAWN = "Withdrawn", "Withdrawn"
 
     id = models.UUIDField(
-        primary_key=True, default=uuid.uuid4, editable=False
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
     )
-    name = models.CharField(max_length=120)
-    description = models.TextField(max_length=2000, blank=True)
+
+    name = models.CharField(
+        max_length=120,
+    )
+
+    description = models.TextField(
+        max_length=2000,
+        blank=True,
+    )
+
     asset_tag = models.CharField(
-        max_length=100, unique=True, null=True, blank=True
+        max_length=100,
+        unique=True,
+        null=True,
+        blank=True,
     )
 
     category = models.ForeignKey(
-        Category, on_delete=models.PROTECT
-    )
-    department = models.ForeignKey(
-        Department, on_delete=models.PROTECT
-    )
-    custodian = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT
+        Category,
+        on_delete=models.PROTECT,
     )
 
-    location = models.CharField(max_length=255)
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.PROTECT,
+    )
+
+    custodian = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+    )
+
+    location = models.CharField(
+        max_length=255,
+    )
+
     tracking_mode = models.CharField(
         max_length=20,
         choices=TrackingMode.choices,
-        default=TrackingMode.INDIVIDUAL
+        default=TrackingMode.INDIVIDUAL,
     )
+
     quantity = models.PositiveIntegerField(
-        validators=[MinValueValidator(1)]
+        validators=[MinValueValidator(1)],
     )
+
     condition = models.CharField(
         max_length=20,
         choices=Condition.choices,
-        default=Condition.GOOD
+        default=Condition.GOOD,
     )
+
     lifecycle = models.CharField(
         max_length=20,
         choices=Lifecycle.choices,
-        default=Lifecycle.ACTIVE
+        default=Lifecycle.ACTIVE,
     )
+
     publication = models.CharField(
         max_length=20,
         choices=Publication.choices,
-        default=Publication.DRAFT
+        default=Publication.DRAFT,
     )
 
-    acquisition_date = models.DateField(null=True, blank=True)
+    acquisition_date = models.DateField(
+        null=True,
+        blank=True,
+    )
+
     estimated_value_aed = models.DecimalField(
-        max_digits=12, decimal_places=2, null=True, blank=True,
-        validators=[MinValueValidator(0)]
-    )
-    mass_kg = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True,
-        validators=[MinValueValidator(0)]
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
     )
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    mass_kg = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
 
     def clean(self):
-        from django.core.exceptions import ValidationError
-        from django.utils import timezone
+        super().clean()
 
         errors = {}
 
@@ -136,21 +209,45 @@ class Asset(models.Model):
         return self.name
 
 
+# ==========================================================
+# STOCK BALANCE
+# ==========================================================
+
 class StockBalance(models.Model):
+
     asset = models.OneToOneField(
         Asset,
         on_delete=models.PROTECT,
-        related_name="stock"
+        related_name="stock",
     )
 
-    free = models.PositiveIntegerField(default=0)
-    held = models.PositiveIntegerField(default=0)
-    in_transit = models.PositiveIntegerField(default=0)
-    in_use = models.PositiveIntegerField(default=0)
-    blocked = models.PositiveIntegerField(default=0)
-    retired = models.PositiveIntegerField(default=0)
+    free = models.PositiveIntegerField(
+        default=0,
+    )
 
-    updated_at = models.DateTimeField(auto_now=True)
+    held = models.PositiveIntegerField(
+        default=0,
+    )
+
+    in_transit = models.PositiveIntegerField(
+        default=0,
+    )
+
+    in_use = models.PositiveIntegerField(
+        default=0,
+    )
+
+    blocked = models.PositiveIntegerField(
+        default=0,
+    )
+
+    retired = models.PositiveIntegerField(
+        default=0,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
 
     @property
     def total(self):
@@ -164,8 +261,6 @@ class StockBalance(models.Model):
         )
 
     def clean(self):
-        from django.core.exceptions import ValidationError
-
         super().clean()
 
         if self.asset_id and self.total != self.asset.quantity:
@@ -176,3 +271,142 @@ class StockBalance(models.Model):
     def __str__(self):
         return f"{self.asset.name}: {self.free} available"
 
+
+# ==========================================================
+# ASSET SPECIFICATIONS
+# ==========================================================
+
+class AssetSpecification(models.Model):
+
+    asset = models.ForeignKey(
+        Asset,
+        on_delete=models.CASCADE,
+        related_name="specifications",
+    )
+
+    name = models.CharField(
+        max_length=100,
+    )
+
+    value = models.CharField(
+        max_length=500,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["asset", "name"],
+                name="unique_asset_specification_name",
+            ),
+        ]
+
+        ordering = ["name"]
+
+    def clean(self):
+        super().clean()
+
+        errors = {}
+
+        if not self.name or not self.name.strip():
+            errors["name"] = (
+                "Specification name is required."
+            )
+
+        if not self.value or not self.value.strip():
+            errors["value"] = (
+                "Specification value is required."
+            )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return (
+            f"{self.asset.name} - "
+            f"{self.name}: {self.value}"
+        )
+
+
+# ==========================================================
+# ASSET ATTACHMENTS
+# ==========================================================
+
+class AssetAttachment(models.Model):
+
+    class AttachmentType(models.TextChoices):
+        IMAGE = "Image", "Image"
+        MANUAL = "Manual", "Manual"
+        REPORT = "Report", "Report"
+        OTHER = "Other", "Other"
+
+    asset = models.ForeignKey(
+        Asset,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+
+    title = models.CharField(
+        max_length=150,
+    )
+
+    attachment_type = models.CharField(
+        max_length=20,
+        choices=AttachmentType.choices,
+        default=AttachmentType.OTHER,
+    )
+
+    file = models.FileField(
+        upload_to="asset_attachments/",
+        validators=[
+            FileExtensionValidator(
+                allowed_extensions=[
+                    "pdf",
+                    "jpg",
+                    "jpeg",
+                    "png",
+                ],
+            ),
+        ],
+    )
+
+    uploaded_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    def clean(self):
+        super().clean()
+
+        errors = {}
+
+        if not self.title or not self.title.strip():
+            errors["title"] = (
+                "Attachment title is required."
+            )
+
+        if self.file:
+            max_size = 10 * 1024 * 1024
+
+            if (
+                self.file.size is not None
+                and self.file.size > max_size
+            ):
+                errors["file"] = (
+                    "Attachment size cannot exceed 10 MB."
+                )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return (
+            f"{self.asset.name} - "
+            f"{self.title}"
+        )
