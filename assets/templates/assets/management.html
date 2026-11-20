@@ -241,14 +241,28 @@
         and track publication status.
     </p>
 
-<div style="margin-bottom: 25px;">
+<
+<div style="
+    margin-bottom: 25px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+">
     <a
         href="{% url 'asset_registration' %}"
         class="btn"
     >
         + Register New Asset
     </a>
+
+    <a
+        href="{% url 'maintenance_management' %}"
+        class="btn btn-secondary"
+    >
+        Maintenance &amp; Repairs
+    </a>
 </div>
+
 
     <section class="filter-panel">
 
@@ -330,6 +344,17 @@
                         <strong>Condition:</strong>
                         {{ asset.get_condition_display }}
                     </p>
+
+{% if asset.lifecycle == "Active" and asset.stock.free > 0 %}
+    <a
+        href="{% url 'maintenance_report' asset.pk %}"
+        class="btn btn-secondary"
+        style="margin-top: 12px;"
+    >
+        Report Maintenance
+    </a>
+{% endif %}
+
 
                     <p>
                         <strong>Lifecycle:</strong>

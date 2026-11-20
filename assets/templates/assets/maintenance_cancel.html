@@ -1,0 +1,178 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cancel Maintenance | KU ResourceSavers</title>
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        main {
+            max-width: 760px;
+            margin: 35px auto;
+            padding: 0 20px;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 28px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        h2 { color: #17365d; }
+
+        .warning {
+            background: #fff7ed;
+            color: #9a3412;
+            padding: 15px;
+            border-radius: 8px;
+            line-height: 1.6;
+            margin: 20px 0;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            font: inherit;
+        }
+
+        .errors {
+            color: #991b1b;
+            margin: 12px 0;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 25px;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #17365d;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 7px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .btn-secondary {
+            background: #e8eef5;
+            color: #17365d;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+</header>
+
+<main>
+    <section class="panel">
+
+        <h2>Cancel Maintenance</h2>
+
+        <p>
+            <strong>Maintenance:</strong>
+            #{{ maintenance.pk }} — {{ maintenance.title }}
+        </p>
+
+        <p>
+            <strong>Asset:</strong>
+            {{ maintenance.asset.name }}
+        </p>
+
+        <p>
+            <strong>Affected Quantity:</strong>
+            {{ maintenance.quantity }}
+        </p>
+
+        <p>
+            <strong>Status:</strong>
+            {{ maintenance.get_status_display }}
+        </p>
+
+        <div class="warning">
+            Cancellation is allowed only for reported
+            maintenance when the asset can safely return
+            to available stock.
+
+            Successful cancellation releases the affected
+            quantity from blocked stock.
+        </div>
+
+        <form method="post">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="errors" role="alert">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            <label for="{{ form.reason.id_for_label }}">
+                Cancellation Reason
+            </label>
+
+            {{ form.reason }}
+
+            {% if form.reason.errors %}
+                <div class="errors" role="alert">
+                    {{ form.reason.errors }}
+                </div>
+            {% endif %}
+
+            <div class="actions">
+                <button type="submit" class="btn">
+                    Confirm Cancellation
+                </button>
+
+                <a
+                    href="{% url 'maintenance_management' %}"
+                    class="btn btn-secondary"
+                >
+                    Back to Maintenance
+                </a>
+            </div>
+        </form>
+
+    </section>
+</main>
+
+</body>
+</html>

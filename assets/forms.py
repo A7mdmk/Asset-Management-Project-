@@ -1,6 +1,6 @@
 
 from django import forms
-
+from .models import AssetMaintenance
 from .models import Asset, Category, Department
 
 
@@ -88,3 +88,79 @@ class AssetRegistrationForm(forms.Form):
             )
 
         return cleaned_data
+
+class MaintenanceReportForm(forms.Form):
+    title = forms.CharField(
+        max_length=150,
+        label="Issue Title",
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "Describe the issue briefly",
+            }
+        ),
+    )
+
+    description = forms.CharField(
+        max_length=2000,
+        label="Issue Description",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 5,
+                "placeholder": (
+                    "Explain the problem with the asset..."
+                ),
+            }
+        ),
+    )
+
+    quantity = forms.IntegerField(
+        min_value=1,
+        label="Affected Quantity",
+        initial=1,
+        widget=forms.NumberInput(
+            attrs={
+                "min": "1",
+            }
+        ),
+    )
+
+
+class RepairCompletionForm(forms.Form):
+    repair_notes = forms.CharField(
+        max_length=2000,
+        label="Repair Notes",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 5,
+                "placeholder": (
+                    "Describe the repair work completed..."
+                ),
+            }
+        ),
+    )
+
+    return_to_service = forms.TypedChoiceField(
+        label="Return Asset to Service?",
+        choices=[
+            ("true", "Yes - Return to available stock"),
+            ("false", "No - Keep stock blocked"),
+        ],
+        coerce=lambda value: value == "true",
+        empty_value=None,
+        widget=forms.RadioSelect,
+    )
+
+
+class MaintenanceCancellationForm(forms.Form):
+    reason = forms.CharField(
+        max_length=2000,
+        label="Cancellation Reason",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 4,
+                "placeholder": (
+                    "Explain why maintenance is cancelled..."
+                ),
+            }
+        ),
+    )

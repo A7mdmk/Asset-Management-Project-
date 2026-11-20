@@ -1,0 +1,311 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Complete Repair | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        header a {
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        main {
+            max-width: 850px;
+            margin: 35px auto;
+            padding: 0 20px;
+        }
+
+        h2 {
+            color: #17365d;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #627083;
+            line-height: 1.6;
+            margin-bottom: 25px;
+        }
+
+        .panel {
+            background: white;
+            padding: 28px;
+            border-radius: 12px;
+            box-shadow: 0 3px 12px #0000000a;
+            margin-bottom: 22px;
+        }
+
+        .panel h3 {
+            color: #17365d;
+            margin-top: 0;
+        }
+
+        .details {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px 20px;
+        }
+
+        .details p {
+            line-height: 1.6;
+            margin: 5px 0;
+            overflow-wrap: anywhere;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin: 20px 0 8px;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 12px;
+            font: inherit;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            resize: vertical;
+        }
+
+        .radio-group {
+            margin-top: 12px;
+        }
+
+        .radio-group > div {
+            margin-bottom: 12px;
+        }
+
+        .radio-group label {
+            display: inline;
+            margin: 0 0 0 8px;
+            font-weight: normal;
+            cursor: pointer;
+        }
+
+        .warning {
+            background: #fff7ed;
+            color: #9a3412;
+            border-radius: 8px;
+            padding: 16px;
+            line-height: 1.7;
+            font-size: 14px;
+            margin-bottom: 22px;
+        }
+
+        .error-box {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            border-radius: 7px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .field-error {
+            color: #991b1b;
+            font-size: 13px;
+            margin-top: 8px;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 28px;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #17365d;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 7px;
+            text-decoration: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .btn-secondary {
+            background: #e8eef5;
+            color: #17365d;
+        }
+
+        footer {
+            text-align: center;
+            padding: 35px 20px;
+            color: #758297;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+
+    <a href="{% url 'maintenance_management' %}">
+        Back to Maintenance
+    </a>
+</header>
+
+<main>
+
+    <h2>Complete Asset Repair</h2>
+
+    <p class="subtitle">
+        Record the completed repair work and decide
+        whether the affected asset units can safely
+        return to available stock.
+    </p>
+
+    <section class="panel">
+
+        <h3>Maintenance Details</h3>
+
+        <div class="details">
+
+            <p>
+                <strong>Maintenance ID:</strong>
+                #{{ maintenance.pk }}
+            </p>
+
+            <p>
+                <strong>Asset:</strong>
+                {{ maintenance.asset.name }}
+            </p>
+
+            <p>
+                <strong>Department:</strong>
+                {{ maintenance.asset.department.name }}
+            </p>
+
+            <p>
+                <strong>Current Status:</strong>
+                {{ maintenance.get_status_display }}
+            </p>
+
+            <p>
+                <strong>Affected Quantity:</strong>
+                {{ maintenance.quantity }}
+            </p>
+
+            <p>
+                <strong>Asset Condition:</strong>
+                {{ maintenance.asset.get_condition_display }}
+            </p>
+
+        </div>
+
+    </section>
+
+    <div class="warning">
+        <strong>Important:</strong>
+        Returning stock to service is permitted only
+        when the asset is Active and its condition
+        is Good or Fair.
+
+        If the asset is not ready, choose
+        <strong>No — Keep stock blocked</strong>.
+        The repair record will be completed, but
+        affected stock will remain unavailable.
+    </div>
+
+    <section class="panel">
+
+        <h3>Repair Completion Details</h3>
+
+        <form method="post">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="error-box" role="alert">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            <label for="{{ form.repair_notes.id_for_label }}">
+                Repair Notes
+            </label>
+
+            {{ form.repair_notes }}
+
+            {% if form.repair_notes.errors %}
+                <div class="field-error" role="alert">
+                    {{ form.repair_notes.errors }}
+                </div>
+            {% endif %}
+
+            <label>
+                Return Asset to Service?
+            </label>
+
+            <div class="radio-group">
+                {{ form.return_to_service }}
+            </div>
+
+            {% if form.return_to_service.errors %}
+                <div class="field-error" role="alert">
+                    {{ form.return_to_service.errors }}
+                </div>
+            {% endif %}
+
+            <div class="actions">
+
+                <button type="submit" class="btn">
+                    Complete Repair
+                </button>
+
+                <a
+                    href="{% url 'maintenance_management' %}"
+                    class="btn btn-secondary"
+                >
+                    Cancel
+                </a>
+
+            </div>
+
+        </form>
+
+    </section>
+
+</main>
+
+<footer>
+    KU ResourceSavers | COSC 336 | Group 7
+</footer>
+
+</body>
+</html>
