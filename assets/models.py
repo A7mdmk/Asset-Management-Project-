@@ -410,3 +410,109 @@ class AssetAttachment(models.Model):
             f"{self.asset.name} - "
             f"{self.title}"
         )
+
+# ==========================================================
+# ASSET MAINTENANCE
+# ==========================================================
+
+class AssetMaintenance(models.Model):
+
+    class Status(models.TextChoices):
+        REPORTED = "Reported", "Reported"
+        IN_PROGRESS = "InProgress", "In Progress"
+        COMPLETED = "Completed", "Completed"
+        CANCELLED = "Cancelled", "Cancelled"
+
+    asset = models.ForeignKey(
+        Asset,
+        on_delete=models.PROTECT,
+        related_name="maintenance_records",
+    )
+
+    reported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="reported_maintenance",
+    )
+
+    title = models.CharField(
+        max_length=150,
+    )
+
+    description = models.TextField(
+        max_length=2000,
+    )
+
+    quantity = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)],
+        default=1,
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.REPORTED,
+    )
+
+    repair_notes = models.TextField(
+        max_length=2000,
+        blank=True,
+    )
+
+    reported_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ["-reported_at"]
+
+    def clean(self):
+        super().clean()
+
+        errors = {}
+
+        if not self.title or not self.title.strip():
+            errors["title"] = (
+                "Maintenance title is required."
+            )
+
+        if not self.description or not self.description.strip():
+            errors["description"] = (
+                "Maintenance description is required."
+            )
+
+        if self.asset_id:
+            if self.quantity > self.asset.quantity:
+                errors["quantity"] = (
+                    "Maintenance quantity cannot exceed "
+                    "the asset's total quantity."
+                )
+
+            if (
+                self.asset.tracking_mode
+                == Asset.TrackingMode.INDIVIDUAL
+                and self.quantity != 1
+            ):
+                errors["quantity"] = (
+                    "Individual assets require "
+                    "maintenance quantity 1."
+                )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return (
+            f"Maintenance #{self.pk} - "
+            f"{self.asset.name} ({self.status})"
+        )

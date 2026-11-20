@@ -1,13 +1,14 @@
-
+﻿from django.db.models import Sum
 from django.db import transaction
 from django.core.exceptions import ValidationError
-from .models import Asset, StockBalance
 from .models import (
     Asset,
     StockBalance,
     AssetSpecification,
     AssetAttachment,
+    AssetMaintenance,
 )
+from django.utils import timezone
 from pathlib import Path
 from django.core.exceptions import ValidationError
 def initialize_stock(asset):
@@ -475,3 +476,453 @@ def delete_asset_attachment(*, actor, attachment_id):
                 storage.delete(file_name)
             )
         )
+
+# ==========================================================
+# ASSET MAINTENANCE MANAGEMENT
+# ==========================================================
+
+@transaction.atomic
+def report_asset_maintenance(
+    *,
+    actor,
+    asset_id,
+    title,
+    description,
+    quantity=1,
+):
+    """
+    Report an equipment maintenance issue.
+
+    Move affected stock from Free to Blocked.
+
+    Existing reservations and transfers
+    are not modified.
+    """
+
+    asset = Asset.objects.select_for_update().get(
+        pk=asset_id
+    )
+
+    validate_asset_metadata_permission(
+        actor=actor,
+        asset=asset,
+    )
+
+    if asset.lifecycle != Asset.Lifecycle.ACTIVE:
+        raise ValidationError(
+            "Only active assets can enter maintenance."
+        )
+
+    if not isinstance(quantity, int) or isinstance(
+        quantity, bool
+    ):
+        raise ValidationError(
+            "Maintenance quantity must be a whole number."
+        )
+
+    if quantity < 1:
+        raise ValidationError(
+            "Maintenance quantity must be at least 1."
+        )
+
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
+
+    if stock.free < quantity:
+        raise ValidationError(
+            "Insufficient free stock for maintenance."
+        )
+
+    maintenance = AssetMaintenance(
+        asset=asset,
+        reported_by=actor,
+        title=title,
+        description=description,
+        quantity=quantity,
+        status=AssetMaintenance.Status.REPORTED,
+    )
+
+    maintenance.full_clean()
+
+    # Reserve the affected quantity for repair.
+    stock.free -= quantity
+    stock.blocked += quantity
+
+    stock.full_clean()
+    stock.save(
+        update_fields=[
+            "free",
+            "blocked",
+            "updated_at",
+        ]
+    )
+
+    maintenance.save()
+
+    validate_maintenance_stock_integrity(
+        asset=asset,
+        stock=stock,
+    )
+
+    return maintenance
+
+
+
+# ==========================================================
+# START ASSET REPAIR
+# ==========================================================
+
+@transaction.atomic
+def start_asset_repair(*, actor, maintenance_id):
+    """
+    Start an existing maintenance job.
+
+    Reported -> InProgress
+
+    Stock remains blocked.
+    """
+
+    # Find the asset before acquiring locks.
+    maintenance_reference = AssetMaintenance.objects.get(
+        pk=maintenance_id
+    )
+
+    # Lock the asset first, matching the lock order
+    # used by maintenance reporting and stock workflows.
+    asset = Asset.objects.select_for_update().get(
+        pk=maintenance_reference.asset_id
+    )
+
+    validate_asset_metadata_permission(
+        actor=actor,
+        asset=asset,
+    )
+
+    maintenance = (
+        AssetMaintenance.objects.select_for_update()
+        .get(
+            pk=maintenance_id,
+            asset_id=asset.pk,
+        )
+    )
+
+    if maintenance.status != AssetMaintenance.Status.REPORTED:
+        raise ValidationError(
+            "Only reported maintenance can be started."
+        )
+
+    if asset.lifecycle != Asset.Lifecycle.ACTIVE:
+        raise ValidationError(
+            "Only active assets can undergo repair."
+        )
+
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
+
+    # The previously blocked quantity must still exist.
+    if stock.blocked < maintenance.quantity:
+        raise ValidationError(
+            "Insufficient blocked stock for this maintenance."
+        )
+
+    stock.full_clean()
+
+    maintenance.status = AssetMaintenance.Status.IN_PROGRESS
+    maintenance.started_at = timezone.now()
+
+    maintenance.full_clean()
+    maintenance.save(
+        update_fields=[
+            "status",
+            "started_at",
+        ]
+    )
+    validate_maintenance_stock_integrity(
+    asset=asset,
+    stock=stock,
+)
+    return maintenance
+
+# ==========================================================
+# COMPLETE ASSET REPAIR
+# ==========================================================
+
+@transaction.atomic
+def complete_asset_repair(
+    *,
+    actor,
+    maintenance_id,
+    repair_notes,
+    return_to_service,
+):
+    """
+    Complete an existing repair.
+
+    If return_to_service=True:
+        Blocked -> Free
+
+    If return_to_service=False:
+        Stock remains Blocked.
+
+    Existing reservations and transfers
+    are not modified.
+    """
+
+    maintenance_reference = AssetMaintenance.objects.get(
+        pk=maintenance_id
+    )
+
+    # Lock the asset first.
+    asset = Asset.objects.select_for_update().get(
+        pk=maintenance_reference.asset_id
+    )
+
+    validate_asset_metadata_permission(
+        actor=actor,
+        asset=asset,
+    )
+
+    maintenance = (
+        AssetMaintenance.objects.select_for_update()
+        .get(
+            pk=maintenance_id,
+            asset_id=asset.pk,
+        )
+    )
+
+    if maintenance.status != AssetMaintenance.Status.IN_PROGRESS:
+        raise ValidationError(
+            "Only repairs in progress can be completed."
+        )
+
+    if not isinstance(repair_notes, str) or not repair_notes.strip():
+        raise ValidationError(
+            "Repair completion notes are required."
+        )
+
+    if not isinstance(return_to_service, bool):
+        raise ValidationError(
+            "Return-to-service must be True or False."
+        )
+
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
+
+    stock.full_clean()
+
+    if stock.blocked < maintenance.quantity:
+        raise ValidationError(
+            "Insufficient blocked stock for this repair."
+        )
+
+    if return_to_service:
+        if asset.lifecycle != Asset.Lifecycle.ACTIVE:
+            raise ValidationError(
+                "Only active assets can return to service."
+            )
+
+        if asset.condition not in (
+            Asset.Condition.GOOD,
+            Asset.Condition.FAIR,
+        ):
+            raise ValidationError(
+                "Asset condition must be Good or Fair "
+                "before returning repaired stock to service."
+            )
+
+        stock.blocked -= maintenance.quantity
+        stock.free += maintenance.quantity
+
+        stock.full_clean()
+        stock.save(
+            update_fields=[
+                "blocked",
+                "free",
+                "updated_at",
+            ]
+        )
+
+    # When return_to_service=False, the
+    # affected units remain blocked.
+
+    maintenance.status = AssetMaintenance.Status.COMPLETED
+    maintenance.repair_notes = repair_notes.strip()
+    maintenance.completed_at = timezone.now()
+
+    maintenance.full_clean()
+    maintenance.save(
+        update_fields=[
+            "status",
+            "repair_notes",
+            "completed_at",
+        ]
+    )
+    validate_maintenance_stock_integrity(
+    asset=asset,
+    stock=stock,
+    )
+
+    return maintenance
+
+# ==========================================================
+# CANCEL ASSET MAINTENANCE
+# ==========================================================
+
+@transaction.atomic
+def cancel_asset_maintenance(
+    *,
+    actor,
+    maintenance_id,
+    reason,
+):
+    """
+    Cancel a reported maintenance record.
+
+    Only Reported -> Cancelled is allowed.
+
+    Release the maintenance quantity:
+        Blocked -> Free
+
+    Cancellation is rejected if the asset
+    cannot safely return to available stock.
+    """
+
+    maintenance_reference = AssetMaintenance.objects.get(
+        pk=maintenance_id
+    )
+
+    # Lock the parent asset first to remain
+    # consistent with the maintenance workflows.
+    asset = Asset.objects.select_for_update().get(
+        pk=maintenance_reference.asset_id
+    )
+
+    validate_asset_metadata_permission(
+        actor=actor,
+        asset=asset,
+    )
+
+    maintenance = (
+        AssetMaintenance.objects.select_for_update()
+        .get(
+            pk=maintenance_id,
+            asset_id=asset.pk,
+        )
+    )
+
+    if maintenance.status != AssetMaintenance.Status.REPORTED:
+        raise ValidationError(
+            "Only reported maintenance can be cancelled."
+        )
+
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValidationError(
+            "A maintenance cancellation reason is required."
+        )
+
+    if asset.lifecycle != Asset.Lifecycle.ACTIVE:
+        raise ValidationError(
+            "Maintenance cannot be cancelled while "
+            "the asset is inactive."
+        )
+
+    if asset.condition not in (
+        Asset.Condition.GOOD,
+        Asset.Condition.FAIR,
+    ):
+        raise ValidationError(
+            "Maintenance cannot be cancelled while "
+            "the asset condition is unsafe or requires attention."
+        )
+
+    stock = StockBalance.objects.select_for_update().get(
+        asset=asset
+    )
+
+    stock.full_clean()
+
+    if stock.blocked < maintenance.quantity:
+        raise ValidationError(
+            "Insufficient blocked stock for cancellation."
+        )
+
+    # Release the quantity originally reserved
+    # for this maintenance record.
+    stock.blocked -= maintenance.quantity
+    stock.free += maintenance.quantity
+
+    stock.full_clean()
+    stock.save(
+        update_fields=[
+            "blocked",
+            "free",
+            "updated_at",
+        ]
+    )
+
+    maintenance.status = AssetMaintenance.Status.CANCELLED
+
+    # Record the cancellation reason using the
+    # existing notes field to avoid another migration.
+    maintenance.repair_notes = (
+        f"Cancellation reason: {reason.strip()}"
+    )
+
+    maintenance.full_clean()
+    maintenance.save(
+        update_fields=[
+            "status",
+            "repair_notes",
+        ]
+    )
+    validate_maintenance_stock_integrity(
+    asset=asset,
+    stock=stock,
+)
+
+    return maintenance
+
+# ==========================================================
+# MAINTENANCE STOCK INTEGRITY
+# ==========================================================
+
+def validate_maintenance_stock_integrity(
+    *,
+    asset,
+    stock,
+):
+    """
+    Verify that blocked stock covers all
+    currently active maintenance records.
+
+    Active maintenance statuses:
+    - Reported
+    - InProgress
+
+    Does not modify stock.
+    """
+
+    active_maintenance_quantity = (
+        AssetMaintenance.objects.filter(
+            asset=asset,
+            status__in=[
+                AssetMaintenance.Status.REPORTED,
+                AssetMaintenance.Status.IN_PROGRESS,
+            ],
+        ).aggregate(
+            total=Sum("quantity")
+        )["total"] or 0
+    )
+
+    if stock.blocked < active_maintenance_quantity:
+        raise ValidationError(
+            "Blocked stock is insufficient to cover "
+            "all active maintenance records."
+        )
+
+    stock.full_clean()
+
+    return active_maintenance_quantity
