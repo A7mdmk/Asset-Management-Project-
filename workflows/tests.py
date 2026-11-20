@@ -21,6 +21,7 @@ from .services import (
     dispatch_transfer,
     confirm_transfer_receipt,
     report_transfer_dispute,
+    cancel_arranged_transfer,
 )
 
 
@@ -2522,4 +2523,354 @@ class ApprovalWorkflowTests(SubmitRequestTests):
         self.assertEqual(self.asset.stock.held, 0)
         self.assertEqual(self.asset.stock.in_transit, 2)
         self.assertEqual(self.asset.stock.in_use, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # ==========================================================
+    # TRANSFER CANCELLATION TESTS
+    # ==========================================================
+
+    # TEST 1: SUCCESSFUL CANCELLATION - SAFE ASSET
+
+    def test_cancel_arranged_transfer_releases_safe_stock(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        result = cancel_arranged_transfer(
+            actor=self.requester,
+            transfer_id=transfer.pk,
+            reason="Equipment no longer needed",
+        )
+
+        result.refresh_from_db()
+        reservation = result.reservation
+        reservation.refresh_from_db()
+        resource_request = reservation.request
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(result.status, Transfer.Status.CANCELLED)
+        self.assertEqual(
+            result.cancellation_reason,
+            "Equipment no longer needed",
+        )
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.CANCELLED,
+        )
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.CANCELLED,
+        )
+
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.blocked, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # TEST 2: UNSAFE ASSET - HELD TO BLOCKED
+
+    def test_cancel_arranged_transfer_blocks_unsafe_stock(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        self.asset.condition = Asset.Condition.UNSAFE
+        self.asset.save(update_fields=["condition"])
+
+        cancel_arranged_transfer(
+            actor=self.requester,
+            transfer_id=transfer.pk,
+            reason="Asset failed safety inspection",
+        )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.CANCELLED,
+        )
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.blocked, 2)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # TEST 3: SOURCE CUSTODIAN CAN CANCEL
+
+    def test_source_custodian_can_cancel_arranged_transfer(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        result = cancel_arranged_transfer(
+            actor=self.custodian,
+            transfer_id=transfer.pk,
+            reason="Transfer no longer required",
+        )
+
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            result.status,
+            Transfer.Status.CANCELLED,
+        )
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+
+    # TEST 4: UNAUTHORIZED USER
+
+    def test_unauthorized_user_cannot_cancel_arranged_transfer(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        with self.assertRaises(ValidationError):
+            cancel_arranged_transfer(
+                actor=self.approver,
+                transfer_id=transfer.pk,
+                reason="Unauthorized attempt",
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.ARRANGED,
+        )
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # TEST 5: CANCELLATION REASON REQUIRED
+
+    def test_transfer_cancellation_requires_reason(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        for reason in ("", "   ", None):
+            with self.subTest(reason=repr(reason)):
+                with self.assertRaises(ValidationError):
+                    cancel_arranged_transfer(
+                        actor=self.requester,
+                        transfer_id=transfer.pk,
+                        reason=reason,
+                    )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.ARRANGED,
+        )
+        self.assertEqual(self.asset.stock.held, 2)
+
+    # TEST 6: PREVENT DUPLICATE CANCELLATION
+
+    def test_cannot_cancel_arranged_transfer_twice(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        cancel_arranged_transfer(
+            actor=self.requester,
+            transfer_id=transfer.pk,
+            reason="No longer needed",
+        )
+
+        with self.assertRaises(ValidationError):
+            cancel_arranged_transfer(
+                actor=self.requester,
+                transfer_id=transfer.pk,
+                reason="Second cancellation",
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.CANCELLED,
+        )
+        self.assertEqual(
+            transfer.cancellation_reason,
+            "No longer needed",
+        )
+        self.assertEqual(self.asset.stock.free, 5)
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # TEST 7: CANNOT CANCEL AFTER DISPATCH
+
+    def test_cannot_cancel_dispatched_transfer(self):
+        transfer = self._create_dispatched_transfer_for_receipt()
+
+        with self.assertRaises(ValidationError):
+            cancel_arranged_transfer(
+                actor=self.requester,
+                transfer_id=transfer.pk,
+                reason="Attempt after dispatch",
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.DISPATCHED,
+        )
+        self.assertEqual(self.asset.stock.held, 0)
+        self.assertEqual(self.asset.stock.in_transit, 2)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # TEST 8: CANNOT CANCEL RECEIVED TRANSFER
+
+    def test_cannot_cancel_received_transfer(self):
+        transfer = self._create_dispatched_transfer_for_receipt()
+
+        confirm_transfer_receipt(
+            actor=self.approver,
+            transfer_id=transfer.pk,
+        )
+
+        with self.assertRaises(ValidationError):
+            cancel_arranged_transfer(
+                actor=self.requester,
+                transfer_id=transfer.pk,
+                reason="Attempt after receipt",
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.RECEIVED,
+        )
+        self.assertEqual(self.asset.stock.in_use, 2)
+        self.assertEqual(self.asset.stock.in_transit, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # TEST 9: CANNOT CANCEL DISPUTED TRANSFER
+
+    def test_cannot_cancel_disputed_transfer(self):
+        transfer = self._create_dispatched_transfer_for_receipt()
+
+        report_transfer_dispute(
+            actor=self.approver,
+            transfer_id=transfer.pk,
+            reason="Equipment arrived damaged",
+        )
+
+        with self.assertRaises(ValidationError):
+            cancel_arranged_transfer(
+                actor=self.requester,
+                transfer_id=transfer.pk,
+                reason="Attempt during dispute",
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.DISPUTED,
+        )
+        self.assertEqual(self.asset.stock.in_transit, 2)
+        self.assertEqual(self.asset.stock.in_use, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # TEST 10: INSUFFICIENT HELD STOCK
+
+    def test_transfer_cancellation_requires_held_stock(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        stock = self.asset.stock
+        stock.refresh_from_db()
+
+        # Simulate inconsistent stock, preserving total.
+        stock.held = 1
+        stock.free = 4
+        stock.save(update_fields=["held", "free"])
+
+        with self.assertRaises(ValidationError):
+            cancel_arranged_transfer(
+                actor=self.requester,
+                transfer_id=transfer.pk,
+                reason="Testing insufficient stock",
+            )
+
+        transfer.refresh_from_db()
+        stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.ARRANGED,
+        )
+        self.assertEqual(stock.free, 4)
+        self.assertEqual(stock.held, 1)
+        self.assertEqual(stock.total, 5)
+
+    # TEST 11: TRANSACTION ROLLBACK
+
+    def test_transfer_cancellation_failure_rolls_back(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        # Fail after the stock and transfer saves,
+        # while updating the linked reservation.
+        with patch.object(
+            Reservation,
+            "save",
+            side_effect=RuntimeError(
+                "Simulated reservation save failure"
+            ),
+        ):
+            with self.assertRaises(RuntimeError):
+                cancel_arranged_transfer(
+                    actor=self.requester,
+                    transfer_id=transfer.pk,
+                    reason="Testing transaction rollback",
+                )
+
+        transfer.refresh_from_db()
+        reservation = transfer.reservation
+        reservation.refresh_from_db()
+        resource_request = reservation.request
+        resource_request.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.ARRANGED,
+        )
+        self.assertEqual(transfer.cancellation_reason, "")
+        self.assertEqual(
+            reservation.status,
+            Reservation.Status.CONVERTED,
+        )
+        self.assertEqual(
+            resource_request.status,
+            ResourceRequest.Status.APPROVED,
+        )
+
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
+        self.assertEqual(self.asset.stock.blocked, 0)
+        self.assertEqual(self.asset.stock.total, 5)
+
+    # TEST 12: INACTIVE USER
+
+    def test_inactive_user_cannot_cancel_arranged_transfer(self):
+        transfer = self._create_arranged_transfer_for_dispatch()
+
+        self.requester.is_active = False
+        self.requester.save(update_fields=["is_active"])
+
+        with self.assertRaises(ValidationError):
+            cancel_arranged_transfer(
+                actor=self.requester,
+                transfer_id=transfer.pk,
+                reason="Inactive requester attempt",
+            )
+
+        transfer.refresh_from_db()
+        self.asset.stock.refresh_from_db()
+
+        self.assertEqual(
+            transfer.status,
+            Transfer.Status.ARRANGED,
+        )
+        self.assertEqual(self.asset.stock.free, 3)
+        self.assertEqual(self.asset.stock.held, 2)
         self.assertEqual(self.asset.stock.total, 5)
