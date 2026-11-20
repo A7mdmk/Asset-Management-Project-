@@ -531,3 +531,120 @@ def arrange_transfer(*, actor, reservation_id):
     reservation.save(update_fields=["status"])
 
     return transfer
+
+@transaction.atomic
+def dispatch_transfer(*, actor, transfer_id):
+    if not actor.is_authenticated or not actor.is_active:
+        raise ValidationError(
+            "An active account is required."
+        )
+
+    # Find the request so database locks follow
+    # the same order as the existing workflows.
+    transfer_reference = Transfer.objects.get(
+        pk=transfer_id
+    )
+
+    reservation_reference = Reservation.objects.get(
+        pk=transfer_reference.reservation_id
+    )
+
+    resource_request = (
+        ResourceRequest.objects.select_for_update()
+        .get(pk=reservation_reference.request_id)
+    )
+
+    asset = (
+        Asset.objects.select_for_update()
+        .get(pk=resource_request.asset_id)
+    )
+
+    reservation = (
+        Reservation.objects.select_for_update()
+        .get(pk=reservation_reference.pk)
+    )
+
+    transfer = (
+        Transfer.objects.select_for_update()
+        .get(pk=transfer_id)
+    )
+
+    # Verify the relationships.
+    if transfer.reservation_id != reservation.pk:
+        raise ValidationError(
+            "Transfer reservation mismatch."
+        )
+
+    if reservation.request_id != resource_request.pk:
+        raise ValidationError(
+            "Reservation request mismatch."
+        )
+
+    # Only the assigned source custodian can dispatch.
+    if asset.custodian_id != actor.pk:
+        raise ValidationError(
+            "Only the assigned source custodian "
+            "can dispatch this transfer."
+        )
+
+    if not actor.groups.filter(name="Custodian").exists():
+        raise ValidationError(
+            "The source custodian role is required."
+        )
+
+    if resource_request.status != ResourceRequest.Status.APPROVED:
+        raise ValidationError(
+            "The resource request must be approved."
+        )
+
+    if reservation.status != Reservation.Status.CONVERTED:
+        raise ValidationError(
+            "The reservation must be converted to a transfer."
+        )
+
+    if transfer.status != Transfer.Status.ARRANGED:
+        raise ValidationError(
+            "Only arranged transfers can be dispatched."
+        )
+
+    if transfer.dispatched_at is not None:
+        raise ValidationError(
+            "This transfer has already been dispatched."
+        )
+
+    stock = (
+        StockBalance.objects.select_for_update()
+        .get(asset=asset)
+    )
+
+    if stock.held < transfer.quantity:
+        raise ValidationError(
+            "Insufficient held stock for dispatch."
+        )
+
+    # Move stock exactly once: Held -> InTransit.
+    stock.held -= transfer.quantity
+    stock.in_transit += transfer.quantity
+
+    stock.full_clean()
+    stock.save(
+        update_fields=[
+            "held",
+            "in_transit",
+            "updated_at",
+        ]
+    )
+
+    # Record the dispatch.
+    transfer.status = Transfer.Status.DISPATCHED
+    transfer.dispatched_at = timezone.now()
+
+    transfer.full_clean()
+    transfer.save(
+        update_fields=[
+            "status",
+            "dispatched_at",
+        ]
+    )
+
+    return transfer
