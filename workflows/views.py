@@ -2,7 +2,12 @@
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 from django.core.paginator import Paginator
+from django.core.exceptions import ValidationError
+from django.shortcuts import get_object_or_404, redirect
 
+from assets.asset_search import search_assets
+from .forms import ResourceRequestForm
+from .services import submit_request
 from accounts.permissions import role_required
 from .models import ResourceRequest
 from .ai_recommendations import recommend_assets
@@ -96,4 +101,54 @@ def my_requests_view(request):
         request,
         "workflows/my_requests.html",
         context,
+    )
+
+@role_required("Requester")
+def submit_request_view(request, asset_id):
+    """
+    Allow Requesters to submit resource requests
+    using the existing workflow service.
+    """
+
+    # Only published, active, safe and available assets
+    # can be selected from the request form.
+    asset = get_object_or_404(
+        search_assets(available_only=True),
+        pk=asset_id,
+    )
+
+    if request.method == "POST":
+        form = ResourceRequestForm(request.POST)
+
+        if form.is_valid():
+            try:
+                submit_request(
+                    requester=request.user,
+                    asset_id=asset.pk,
+                    destination_department_id=(
+                        form.cleaned_data[
+                            "destination_department"
+                        ].pk
+                    ),
+                    quantity=form.cleaned_data["quantity"],
+                    reason=form.cleaned_data["reason"],
+                )
+
+            except ValidationError as error:
+                for message in error.messages:
+                    form.add_error(None, message)
+
+            else:
+                return redirect("my_requests")
+
+    else:
+        form = ResourceRequestForm()
+
+    return render(
+        request,
+        "workflows/submit_request.html",
+        {
+            "form": form,
+            "asset": asset,
+        },
     )

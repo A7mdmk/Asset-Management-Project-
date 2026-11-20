@@ -54,6 +54,9 @@ def asset_catalog(request):
     )
 
     context = {
+        "is_requester": request.user.groups.filter(
+    name="Requester"
+).exists(),
         "page_obj": page_obj,
         "assets": page_obj.object_list,
         "categories": Category.objects.order_by("name"),

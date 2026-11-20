@@ -105,11 +105,21 @@
             border: none;
             background: #17365d;
             color: white;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .btn:hover {
+            background: #244d7a;
         }
 
         .btn-secondary {
             background: #e8eef5;
             color: #17365d;
+        }
+
+        .btn-secondary:hover {
+            background: #d6e1ed;
         }
 
         .result-count {
@@ -131,6 +141,8 @@
             padding: 22px;
             border-top: 4px solid #17365d;
             box-shadow: 0 3px 12px #0000000a;
+            display: flex;
+            flex-direction: column;
         }
 
         .asset-card h3 {
@@ -154,8 +166,12 @@
             color: #334155;
         }
 
+        .asset-actions {
+            margin-top: auto;
+            padding-top: 16px;
+        }
+
         .availability {
-            margin-top: 16px;
             padding: 10px;
             background: #edf7f0;
             border-radius: 7px;
@@ -167,6 +183,12 @@
         .unavailable {
             background: #fef2f2;
             color: #991b1b;
+        }
+
+        .request-btn {
+            display: block;
+            width: 100%;
+            margin-top: 14px;
         }
 
         .empty-state {
@@ -207,23 +229,30 @@
 
 <header>
     <h1>KU ResourceSavers</h1>
-    <a href="{% url 'dashboard' %}">Back to Dashboard</a>
+    <a href="{% url 'dashboard' %}">
+        Back to Dashboard
+    </a>
 </header>
 
 <main>
 
     <h2>Browse Campus Assets</h2>
+
     <p class="subtitle">
         Discover resources available across Khalifa University.
     </p>
 
+    <!-- SEARCH AND FILTER PANEL -->
+
     <section class="filter-panel">
+
         <form method="get">
 
             <div class="filters">
 
                 <div>
                     <label for="search">Search Assets</label>
+
                     <input
                         id="search"
                         type="search"
@@ -236,6 +265,7 @@
 
                 <div>
                     <label for="category">Category</label>
+
                     <select id="category" name="category">
                         <option value="">All Categories</option>
 
@@ -247,11 +277,13 @@
                                 {{ category.name }}
                             </option>
                         {% endfor %}
+
                     </select>
                 </div>
 
                 <div>
                     <label for="department">Department</label>
+
                     <select id="department" name="department">
                         <option value="">All Departments</option>
 
@@ -263,19 +295,23 @@
                                 {{ department.name }}
                             </option>
                         {% endfor %}
+
                     </select>
                 </div>
 
                 <div>
                     <label for="condition">Condition</label>
+
                     <select id="condition" name="condition">
                         <option value="">All Safe Conditions</option>
+
                         <option
                             value="Good"
                             {% if selected_condition == "Good" %}selected{% endif %}
                         >
                             Good
                         </option>
+
                         <option
                             value="Fair"
                             {% if selected_condition == "Fair" %}selected{% endif %}
@@ -287,37 +323,48 @@
 
                 <div>
                     <label for="available">Availability</label>
+
                     <select id="available" name="available">
+
                         <option
                             value="1"
                             {% if available_only %}selected{% endif %}
                         >
                             Available Only
                         </option>
+
                         <option
                             value="0"
                             {% if not available_only %}selected{% endif %}
                         >
                             Include Unavailable
                         </option>
+
                     </select>
                 </div>
 
             </div>
 
             <div class="actions">
+
                 <button class="btn" type="submit">
                     Search Assets
                 </button>
 
-                <a class="btn btn-secondary"
-                   href="{% url 'asset_catalog' %}">
+                <a
+                    class="btn btn-secondary"
+                    href="{% url 'asset_catalog' %}"
+                >
                     Clear Filters
                 </a>
+
             </div>
 
         </form>
+
     </section>
+
+    <!-- RESULTS -->
 
     <p class="result-count">
         {{ total_results }} asset{{ total_results|pluralize }} found
@@ -357,15 +404,34 @@
                         {{ asset.get_condition_display }}
                     </p>
 
-                    {% if asset.stock.free > 0 %}
-                        <div class="availability">
-                            {{ asset.stock.free }} Available
-                        </div>
-                    {% else %}
-                        <div class="availability unavailable">
-                            Currently Unavailable
-                        </div>
-                    {% endif %}
+                    <!-- AVAILABILITY AND REQUEST BUTTON -->
+
+                    <div class="asset-actions">
+
+                        {% if asset.stock.free > 0 %}
+
+                            <div class="availability">
+                                {{ asset.stock.free }} Available
+                            </div>
+
+                            {% if is_requester %}
+                                <a
+                                    href="{% url 'submit_request' asset.pk %}"
+                                    class="btn request-btn"
+                                >
+                                    Request Asset
+                                </a>
+                            {% endif %}
+
+                        {% else %}
+
+                            <div class="availability unavailable">
+                                Currently Unavailable
+                            </div>
+
+                        {% endif %}
+
+                    </div>
 
                 </article>
 
@@ -377,6 +443,7 @@
 
         <div class="empty-state">
             <h3>No assets found</h3>
+
             <p>
                 Try changing your search terms or filters.
             </p>
@@ -384,14 +451,18 @@
 
     {% endif %}
 
+    <!-- PAGINATION -->
+
     {% if page_obj.has_other_pages %}
 
         <nav class="pagination" aria-label="Asset pages">
 
             {% if page_obj.has_previous %}
+
                 <a href="?page={{ page_obj.previous_page_number }}&amp;q={{ query|urlencode }}&amp;category={{ selected_category|urlencode }}&amp;department={{ selected_department|urlencode }}&amp;condition={{ selected_condition|urlencode }}&amp;available={% if available_only %}1{% else %}0{% endif %}">
                     Previous
                 </a>
+
             {% endif %}
 
             <span>
@@ -400,9 +471,11 @@
             </span>
 
             {% if page_obj.has_next %}
+
                 <a href="?page={{ page_obj.next_page_number }}&amp;q={{ query|urlencode }}&amp;category={{ selected_category|urlencode }}&amp;department={{ selected_department|urlencode }}&amp;condition={{ selected_condition|urlencode }}&amp;available={% if available_only %}1{% else %}0{% endif %}">
                     Next
                 </a>
+
             {% endif %}
 
         </nav>
