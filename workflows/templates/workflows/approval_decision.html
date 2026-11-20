@@ -1,0 +1,379 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Approval Decision | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        header a {
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        main {
+            max-width: 850px;
+            margin: 35px auto;
+            padding: 0 20px;
+        }
+
+        h2 {
+            color: #17365d;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #627083;
+            line-height: 1.6;
+            margin-bottom: 25px;
+        }
+
+        .panel {
+            background: white;
+            padding: 28px;
+            border-radius: 12px;
+            box-shadow: 0 3px 12px #0000000a;
+            margin-bottom: 22px;
+        }
+
+        .panel h3 {
+            color: #17365d;
+            margin-top: 0;
+        }
+
+        .stage {
+            display: inline-block;
+            padding: 8px 13px;
+            border-radius: 20px;
+            background: #eef2ff;
+            color: #3730a3;
+            font-weight: bold;
+            font-size: 13px;
+            margin-bottom: 18px;
+        }
+
+        .stage-source {
+            background: #ccfbf1;
+            color: #115e59;
+        }
+
+        .details {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(210px, 1fr));
+            gap: 15px;
+        }
+
+        .details p {
+            margin: 5px 0;
+            line-height: 1.6;
+            overflow-wrap: anywhere;
+        }
+
+        .details strong {
+            color: #334155;
+        }
+
+        .reason {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            line-height: 1.6;
+            overflow-wrap: anywhere;
+        }
+
+        .note {
+            background: #eff6ff;
+            padding: 15px;
+            border-radius: 8px;
+            color: #1e40af;
+            line-height: 1.6;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        .note-source {
+            background: #ecfdf5;
+            color: #065f46;
+        }
+
+        .decision-options {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin: 18px 0;
+        }
+
+        .decision-options label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .decision-options input {
+            accent-color: #17365d;
+        }
+
+        textarea {
+            display: block;
+            width: 100%;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            padding: 12px;
+            font: inherit;
+            resize: vertical;
+            margin-top: 8px;
+        }
+
+        .error-list {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+            border-radius: 7px;
+            padding: 12px;
+            margin: 15px 0;
+        }
+
+        .error {
+            color: #991b1b;
+            font-size: 13px;
+            margin-top: 8px;
+        }
+
+        .help {
+            color: #64748b;
+            font-size: 13px;
+            margin-top: 8px;
+            line-height: 1.5;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 25px;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #17365d;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 7px;
+            font-size: 14px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .btn-secondary {
+            background: #e8eef5;
+            color: #17365d;
+        }
+
+        footer {
+            text-align: center;
+            color: #758297;
+            padding: 30px;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+
+    <a href="{% url 'approvals' %}">
+        Back to Approvals
+    </a>
+</header>
+
+<main>
+
+    <h2>Review Resource Request</h2>
+
+    <p class="subtitle">
+        Review the request information before recording
+        your approval decision.
+    </p>
+
+    <section class="panel">
+
+        {% if is_destination_stage %}
+            <span class="stage">
+                Stage 1 — Destination Acceptance
+            </span>
+        {% else %}
+            <span class="stage stage-source">
+                Stage 2 — Source Release
+            </span>
+        {% endif %}
+
+        <h3>
+            Request #{{ resource_request.pk }}
+            — {{ resource_request.asset.name }}
+        </h3>
+
+        <div class="details">
+
+            <p>
+                <strong>Requester:</strong>
+                {{ resource_request.requester.username }}
+            </p>
+
+            <p>
+                <strong>Asset:</strong>
+                {{ resource_request.asset.name }}
+            </p>
+
+            <p>
+                <strong>Quantity:</strong>
+                {{ resource_request.quantity }}
+            </p>
+
+            <p>
+                <strong>Source Department:</strong>
+                {{ resource_request.asset.department.name }}
+            </p>
+
+            <p>
+                <strong>Destination Department:</strong>
+                {{ resource_request.destination_department.name }}
+            </p>
+
+            <p>
+                <strong>Submitted:</strong>
+                {{ resource_request.created_at|date:"M d, Y H:i" }}
+            </p>
+
+            <p>
+                <strong>Expires:</strong>
+                {{ resource_request.expires_at|date:"M d, Y H:i" }}
+            </p>
+
+        </div>
+
+        <div class="reason">
+            <strong>Request Reason:</strong>
+            <p>{{ resource_request.reason|linebreaksbr }}</p>
+        </div>
+
+        {% if is_destination_stage %}
+            <div class="note">
+                Approving destination acceptance allows the
+                source custodian to review this request.
+                Stock is not reserved at this stage.
+            </div>
+        {% else %}
+            <div class="note note-source">
+                Approving source release completes the
+                approval process and reserves the
+                requested stock, subject to availability.
+            </div>
+        {% endif %}
+
+    </section>
+
+    <section class="panel">
+        <h3>Record Your Decision</h3>
+
+        <form method="post">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="error-list" role="alert">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            <strong>Decision</strong>
+
+            <div class="decision-options">
+                {% for radio in form.decision %}
+                    <label for="{{ radio.id_for_label }}">
+                        {{ radio.tag }}
+                        {{ radio.choice_label }}
+                    </label>
+                {% endfor %}
+            </div>
+
+            {% if form.decision.errors %}
+                <div class="error" role="alert">
+                    {{ form.decision.errors }}
+                </div>
+            {% endif %}
+
+            <label for="{{ form.comment.id_for_label }}">
+                <strong>Comment</strong>
+            </label>
+
+            {{ form.comment }}
+
+            {% if form.comment.errors %}
+                <div class="error" role="alert">
+                    {{ form.comment.errors }}
+                </div>
+            {% endif %}
+
+            <p class="help">
+                A reason is required when rejecting a request.
+                Maximum 2,000 characters.
+            </p>
+
+            <div class="actions">
+                <button class="btn" type="submit">
+                    Submit Decision
+                </button>
+
+                <a
+                    class="btn btn-secondary"
+                    href="{% url 'approvals' %}"
+                >
+                    Cancel
+                </a>
+            </div>
+
+        </form>
+    </section>
+
+</main>
+
+<footer>
+    KU ResourceSavers | COSC 336 | Group 7
+</footer>
+
+</body>
+</html>

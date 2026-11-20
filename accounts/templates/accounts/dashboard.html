@@ -192,16 +192,22 @@
         </div>
         {% endif %}
 
-        {% if is_approver %}
-        <div class="card">
-            <h3>Approvals</h3>
-            <p>
-                Review and manage pending
-                resource approvals.
-            </p>
-            <span class="pending">Coming soon</span>
-        </div>
-        {% endif %}
+
+{% if is_approver or is_custodian %}
+<div class="card">
+    <h3>Approvals</h3>
+
+    <p>
+        Review pending destination acceptance
+        and source release requests.
+    </p>
+
+    <a href="{% url 'approvals' %}">
+        Review Approvals
+    </a>
+</div>
+{% endif %}
+
 
         <div class="card">
             <h3>Notifications</h3>
