@@ -2,10 +2,11 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
-from accounts.models import DepartmentApprover
-from assets.models import Asset, StockBalance
-from .models import ResourceRequest, RequestApproval
 
+from accounts.models import DepartmentApprover
+from assets.models import Asset, Department, StockBalance
+
+from .models import ResourceRequest, RequestApproval, Reservation
 
 
 @transaction.atomic
@@ -49,13 +50,10 @@ def submit_request(
                 "Individual assets can only be requested one at a time."
             )
 
-    # Check the destination department.
     if destination_department_id is None:
         raise ValidationError(
             "A destination department is required."
         )
-
-    from assets.models import Department
 
     destination_department = Department.objects.get(
         pk=destination_department_id
@@ -66,7 +64,7 @@ def submit_request(
             "Destination department must be active."
         )
 
-    # Check available stock without reserving it.
+    # Submission checks stock but does not reserve it.
     stock = StockBalance.objects.select_for_update().get(
         asset=asset
     )
@@ -88,7 +86,6 @@ def submit_request(
     resource_request.save()
 
     return resource_request
-
 
 
 @transaction.atomic
@@ -117,13 +114,16 @@ def decide_request(
 
     resource_request = (
         ResourceRequest.objects.select_for_update()
-        .select_related("asset")
+        .select_related("asset", "destination_department")
         .get(pk=request_id)
     )
 
     if resource_request.status != ResourceRequest.Status.PENDING:
-        raise ValidationError("Only pending requests can be decided.")
+        raise ValidationError(
+            "Only pending requests can be decided."
+        )
 
+    # Pending requests expire after 48 hours.
     if resource_request.expires_at <= timezone.now():
         resource_request.status = ResourceRequest.Status.EXPIRED
         resource_request.save(
@@ -150,12 +150,18 @@ def decide_request(
         resource_request.approvals.order_by("created_at", "pk")
     )
 
-    if any(item.stage == stage for item in previous_approvals):
+    if any(
+        item.stage == stage
+        for item in previous_approvals
+    ):
         raise ValidationError(
             "This approval stage has already been decided."
         )
 
-    if any(item.approver_id == approver.pk for item in previous_approvals):
+    if any(
+        item.approver_id == approver.pk
+        for item in previous_approvals
+    ):
         raise ValidationError(
             "Destination and source approvers must be different."
         )
@@ -166,6 +172,7 @@ def decide_request(
                 "A reason is required when rejecting a request."
             )
 
+    # STAGE 1: DESTINATION ACCEPTANCE
     if stage == RequestApproval.Stage.DESTINATION:
         if previous_approvals:
             raise ValidationError(
@@ -190,14 +197,20 @@ def decide_request(
                 "Not authorized for this destination department."
             )
 
-        # Destination acceptance does not reserve stock.
+        # Destination acceptance does not move stock
+        # and does not create a reservation.
 
+    # STAGE 2: SOURCE CUSTODIAN RELEASE
     elif stage == RequestApproval.Stage.SOURCE:
         destination_approval = next(
             (
-                item for item in previous_approvals
-                if item.stage == RequestApproval.Stage.DESTINATION
-                and item.decision == RequestApproval.Decision.APPROVED
+                item
+                for item in previous_approvals
+                if (
+                    item.stage == RequestApproval.Stage.DESTINATION
+                    and item.decision
+                    == RequestApproval.Decision.APPROVED
+                )
             ),
             None,
         )
@@ -213,10 +226,13 @@ def decide_request(
 
         if asset.custodian_id != approver.pk:
             raise ValidationError(
-                "Only the assigned source custodian can release this asset."
+                "Only the assigned source custodian "
+                "can release this asset."
             )
 
-        if not approver.groups.filter(name="Custodian").exists():
+        if not approver.groups.filter(
+            name="Custodian"
+        ).exists():
             raise ValidationError(
                 "The source custodian role is required."
             )
@@ -249,13 +265,16 @@ def decide_request(
                     "Insufficient free stock."
                 )
 
+            # Final source approval reserves stock exactly once.
             stock.free -= resource_request.quantity
             stock.held += resource_request.quantity
+
             stock.full_clean()
             stock.save(
                 update_fields=["free", "held", "updated_at"]
             )
 
+    # Record the approval decision.
     approval = RequestApproval(
         request=resource_request,
         approver=approver,
@@ -266,6 +285,22 @@ def decide_request(
 
     approval.full_clean()
     approval.save()
+
+    # Create a reservation only after successful
+    # final source approval.
+    if (
+        stage == RequestApproval.Stage.SOURCE
+        and decision == RequestApproval.Decision.APPROVED
+    ):
+        reservation = Reservation(
+            request=resource_request,
+            source_approval=approval,
+            quantity=resource_request.quantity,
+            status=Reservation.Status.APPROVED,
+        )
+
+        reservation.full_clean()
+        reservation.save()
 
     if decision == RequestApproval.Decision.REJECTED:
         resource_request.status = ResourceRequest.Status.REJECTED
@@ -279,13 +314,15 @@ def decide_request(
 
     return resource_request
 
+
 @transaction.atomic
 def cancel_pending_request(*, requester, request_id):
     if not requester.is_authenticated or not requester.is_active:
         raise ValidationError("An active account is required.")
 
-    resource_request = ResourceRequest.objects.select_for_update().get(
-        pk=request_id
+    resource_request = (
+        ResourceRequest.objects.select_for_update()
+        .get(pk=request_id)
     )
 
     if resource_request.requester_id != requester.pk:
@@ -299,7 +336,11 @@ def cancel_pending_request(*, requester, request_id):
         )
 
     resource_request.status = ResourceRequest.Status.CANCELLED
-    resource_request.save(update_fields=["status", "updated_at"])
 
-    # Pending requests do not reserve stock.
+    resource_request.save(
+        update_fields=["status", "updated_at"]
+    )
+
+    # Pending requests have no reservation,
+    # so cancellation does not move stock.
     return resource_request

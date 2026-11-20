@@ -161,3 +161,78 @@ class RequestApproval(models.Model):
             f"Request #{self.request_id}: "
             f"{self.stage} - {self.decision} by {self.approver}"
         )
+
+class Reservation(models.Model):
+
+    class Status(models.TextChoices):
+        APPROVED = "Approved", "Approved"
+        CONVERTED = "Converted", "Converted"
+        CANCELLED = "Cancelled", "Cancelled"
+
+    request = models.OneToOneField(
+        ResourceRequest,
+        on_delete=models.PROTECT,
+        related_name="reservation",
+    )
+
+    source_approval = models.OneToOneField(
+        RequestApproval,
+        on_delete=models.PROTECT,
+        related_name="reservation",
+    )
+
+    quantity = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)]
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.APPROVED,
+    )
+
+    approved_at = models.DateTimeField(
+        default=timezone.now
+    )
+
+    cancellation_reason = models.TextField(
+        blank=True
+    )
+
+    def clean(self):
+        super().clean()
+
+        errors = {}
+
+        if self.request_id and self.quantity != self.request.quantity:
+            errors["quantity"] = (
+                "Reservation quantity must match the request."
+            )
+
+        if self.source_approval_id:
+            if (
+                self.source_approval.stage
+                != RequestApproval.Stage.SOURCE
+                or self.source_approval.decision
+                != RequestApproval.Decision.APPROVED
+            ):
+                errors["source_approval"] = (
+                    "A successful source approval is required."
+                )
+
+            elif (
+                self.request_id
+                and self.source_approval.request_id != self.request_id
+            ):
+                errors["source_approval"] = (
+                    "Source approval must belong to this request."
+                )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return (
+            f"Reservation #{self.pk} - "
+            f"Request #{self.request_id} ({self.status})"
+        )
