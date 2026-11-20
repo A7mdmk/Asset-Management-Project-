@@ -1,4 +1,4 @@
-﻿from django.db.models import Sum
+from django.db.models import Sum
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from .models import (
@@ -9,11 +9,31 @@ from .models import (
     AssetMaintenance,
     AssetInspection,
     AssetDisposition,
+    StockMovement,
 )
 from django.utils import timezone
 from pathlib import Path
 from django.core.exceptions import ValidationError
+
+# ==========================================================
+# STOCK INITIALIZATION WITH MOVEMENT HISTORY
+# ==========================================================
+
+@transaction.atomic
 def initialize_stock(asset):
+    """
+    Initialize asset stock and record its registration.
+
+    Good/Fair assets:
+        New -> Free
+
+    Other conditions:
+        New -> Blocked
+
+    Stock and movement history are saved
+    in the same database transaction.
+    """
+
     available = asset.condition in (
         Asset.Condition.GOOD,
         Asset.Condition.FAIR,
@@ -27,6 +47,25 @@ def initialize_stock(asset):
 
     stock.full_clean()
     stock.save()
+
+    destination = (
+        StockMovement.Bucket.FREE
+        if available
+        else StockMovement.Bucket.BLOCKED
+    )
+
+    record_stock_movement(
+        asset=asset,
+        movement_type=StockMovement.MovementType.REGISTRATION,
+        quantity=asset.quantity,
+        source="",
+        destination=destination,
+        actor=None,
+        reference_type="",
+        reference_id="",
+        notes="Initial stock registration",
+    )
+
     return stock
 
 
@@ -560,6 +599,7 @@ def report_asset_maintenance(
         ]
     )
 
+
     maintenance.save()
 
     validate_maintenance_stock_integrity(
@@ -567,7 +607,23 @@ def report_asset_maintenance(
         stock=stock,
     )
 
+    # Record the Free -> Blocked movement.
+    record_stock_movement(
+        asset=asset,
+        movement_type=(
+            StockMovement.MovementType.MAINTENANCE_REPORT
+        ),
+        quantity=maintenance.quantity,
+        source=StockMovement.Bucket.FREE,
+        destination=StockMovement.Bucket.BLOCKED,
+        actor=actor,
+        reference_type="Maintenance",
+        reference_id=maintenance.pk,
+        notes="Stock blocked for maintenance",
+    )
+
     return maintenance
+
 
 
 
@@ -747,6 +803,21 @@ def complete_asset_repair(
             ]
         )
 
+        # Record successful repair stock movement.
+        record_stock_movement(
+            asset=asset,
+            movement_type=(
+                StockMovement.MovementType.REPAIR_COMPLETE
+            ),
+            quantity=maintenance.quantity,
+            source=StockMovement.Bucket.BLOCKED,
+            destination=StockMovement.Bucket.FREE,
+            actor=actor,
+            reference_type="Maintenance",
+            reference_id=maintenance.pk,
+            notes="Repaired equipment returned to service",
+        )
+
     # When return_to_service=False, the
     # affected units remain blocked.
 
@@ -863,6 +934,21 @@ def cancel_asset_maintenance(
             "free",
             "updated_at",
         ]
+    )
+
+    # Record stock released after maintenance cancellation.
+    record_stock_movement(
+        asset=asset,
+        movement_type=(
+            StockMovement.MovementType.MAINTENANCE_CANCEL
+        ),
+        quantity=maintenance.quantity,
+        source=StockMovement.Bucket.BLOCKED,
+        destination=StockMovement.Bucket.FREE,
+        actor=actor,
+        reference_type="Maintenance",
+        reference_id=maintenance.pk,
+        notes="Maintenance cancelled; stock released",
     )
 
     maintenance.status = AssetMaintenance.Status.CANCELLED
@@ -1401,6 +1487,25 @@ def execute_asset_disposition(
         ]
     )
 
+    # Record the Free -> Retired movement.
+    record_stock_movement(
+        asset=asset,
+        movement_type=(
+            StockMovement.MovementType.DISPOSITION
+        ),
+        quantity=disposition.quantity,
+        source=StockMovement.Bucket.FREE,
+        destination=StockMovement.Bucket.RETIRED,
+        actor=actor,
+        reference_type="Disposition",
+        reference_id=disposition.pk,
+        notes=(
+            f"Asset disposition: "
+            f"{disposition.get_disposition_type_display()}"
+        ),
+    )
+
+
     disposition.status = AssetDisposition.Status.COMPLETED
     disposition.completed_by = actor
     disposition.completion_notes = completion_notes.strip()
@@ -1509,3 +1614,43 @@ def cancel_asset_disposition(
     )
 
     return disposition
+
+# ==========================================================
+# STOCK MOVEMENT AUDIT LOGGING
+# ==========================================================
+
+def record_stock_movement(
+    *,
+    asset,
+    movement_type,
+    quantity,
+    source,
+    destination,
+    actor=None,
+    reference_type="",
+    reference_id="",
+    notes="",
+):
+    """
+    Record a stock movement without modifying stock balances.
+
+    Call this within the same transaction that updates
+    the corresponding StockBalance record.
+    """
+
+    movement = StockMovement(
+        asset=asset,
+        movement_type=movement_type,
+        quantity=quantity,
+        source=source,
+        destination=destination,
+        performed_by=actor,
+        reference_type=reference_type,
+        reference_id=str(reference_id) if reference_id else "",
+        notes=notes,
+    )
+
+    movement.full_clean()
+    movement.save()
+
+    return movement

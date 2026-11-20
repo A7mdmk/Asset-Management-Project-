@@ -2,7 +2,8 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
-
+from assets.models import StockMovement
+from assets.services import record_stock_movement
 from accounts.models import DepartmentApprover
 from assets.models import Asset, Department, StockBalance
 
@@ -302,6 +303,22 @@ def decide_request(
         reservation.full_clean()
         reservation.save()
 
+        # Record the Free -> Held movement created
+        # by final source approval.
+        record_stock_movement(
+            asset=resource_request.asset,
+            movement_type=(
+                StockMovement.MovementType.RESERVATION
+            ),
+            quantity=reservation.quantity,
+            source=StockMovement.Bucket.FREE,
+            destination=StockMovement.Bucket.HELD,
+            actor=approver,
+            reference_type="Reservation",
+            reference_id=reservation.pk,
+            notes="Stock reserved after final source approval",
+        )
+
     if decision == RequestApproval.Decision.REJECTED:
         resource_request.status = ResourceRequest.Status.REJECTED
 
@@ -429,6 +446,35 @@ def cancel_approved_reservation(
             "blocked",
             "updated_at",
         ]
+    )
+
+    # Record where the cancelled reservation's
+    # held stock was returned.
+    destination = (
+        StockMovement.Bucket.FREE
+        if (
+            asset.condition in (
+                Asset.Condition.GOOD,
+                Asset.Condition.FAIR,
+            )
+            and asset.lifecycle == Asset.Lifecycle.ACTIVE
+            and asset.publication == Asset.Publication.PUBLISHED
+        )
+        else StockMovement.Bucket.BLOCKED
+    )
+
+    record_stock_movement(
+        asset=asset,
+        movement_type=(
+            StockMovement.MovementType.RESERVATION_CANCEL
+        ),
+        quantity=reservation.quantity,
+        source=StockMovement.Bucket.HELD,
+        destination=destination,
+        actor=actor,
+        reference_type="Reservation",
+        reference_id=reservation.pk,
+        notes="Approved reservation cancelled",
     )
 
     reservation.status = Reservation.Status.CANCELLED
@@ -635,6 +681,20 @@ def dispatch_transfer(*, actor, transfer_id):
         ]
     )
 
+    # Record the Held -> InTransit stock movement.
+    record_stock_movement(
+        asset=asset,
+        movement_type=StockMovement.MovementType.DISPATCH,
+        quantity=transfer.quantity,
+        source=StockMovement.Bucket.HELD,
+        destination=StockMovement.Bucket.IN_TRANSIT,
+        actor=actor,
+        reference_type="Transfer",
+        reference_id=transfer.pk,
+        notes="Stock dispatched for transfer",
+    )
+
+
     # Record the dispatch.
     transfer.status = Transfer.Status.DISPATCHED
     transfer.dispatched_at = timezone.now()
@@ -771,6 +831,19 @@ def confirm_transfer_receipt(*, actor, transfer_id):
             "in_use",
             "updated_at",
         ]
+    )
+
+    # Record the InTransit -> InUse movement.
+    record_stock_movement(
+        asset=asset,
+        movement_type=StockMovement.MovementType.RECEIPT,
+        quantity=transfer.quantity,
+        source=StockMovement.Bucket.IN_TRANSIT,
+        destination=StockMovement.Bucket.IN_USE,
+        actor=actor,
+        reference_type="Transfer",
+        reference_id=transfer.pk,
+        notes="Transfer received by destination",
     )
 
     # Record receipt confirmation.
@@ -1051,6 +1124,35 @@ def cancel_arranged_transfer(*, actor, transfer_id, reason):
             "blocked",
             "updated_at",
         ]
+    )
+
+    # Record where the cancelled transfer's
+    # held stock was returned.
+    destination = (
+        StockMovement.Bucket.FREE
+        if (
+            asset.condition in (
+                Asset.Condition.GOOD,
+                Asset.Condition.FAIR,
+            )
+            and asset.lifecycle == Asset.Lifecycle.ACTIVE
+            and asset.publication == Asset.Publication.PUBLISHED
+        )
+        else StockMovement.Bucket.BLOCKED
+    )
+
+    record_stock_movement(
+        asset=asset,
+        movement_type=(
+            StockMovement.MovementType.TRANSFER_CANCEL
+        ),
+        quantity=transfer.quantity,
+        source=StockMovement.Bucket.HELD,
+        destination=destination,
+        actor=actor,
+        reference_type="Transfer",
+        reference_id=transfer.pk,
+        notes="Arranged transfer cancelled before dispatch",
     )
 
     # Update transfer, reservation, and request atomically.
