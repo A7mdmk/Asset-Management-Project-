@@ -8,8 +8,9 @@ from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
-
+from .services import arrange_transfer
 from .forms import ApprovalDecisionForm
+from .services import dispatch_transfer
 from .services import decide_request
 from assets.asset_search import search_assets
 from .forms import ResourceRequestForm
@@ -17,6 +18,10 @@ from .services import submit_request
 from accounts.permissions import role_required
 from .models import ResourceRequest
 from .ai_recommendations import recommend_assets
+from .models import Reservation, Transfer
+from .services import confirm_transfer_receipt
+from .services import report_transfer_dispute
+from .services import cancel_arranged_transfer
 
 
 @login_required
@@ -395,3 +400,418 @@ def approval_decision_view(request, request_id, stage):
             ),
         },
     )
+
+@role_required("Custodian")
+def transfer_management_view(request):
+    """
+    Display approved reservations and transfers
+    for assets assigned to this source custodian.
+    """
+
+    reservations = (
+        Reservation.objects
+        .filter(
+            request__asset__custodian=request.user,
+            status=Reservation.Status.APPROVED,
+        )
+        .select_related(
+            "request",
+            "request__asset",
+            "request__requester",
+            "request__destination_department",
+        )
+        .order_by("-approved_at", "-pk")
+    )
+
+    transfers = (
+        Transfer.objects
+        .filter(
+            reservation__request__asset__custodian=request.user,
+        )
+        .select_related(
+            "reservation",
+            "reservation__request",
+            "reservation__request__asset",
+            "reservation__request__requester",
+            "reservation__request__destination_department",
+        )
+        .order_by("-arranged_at", "-pk")
+    )
+
+    selected_status = request.GET.get(
+        "status", ""
+    ).strip()
+
+    valid_statuses = {
+        value
+        for value, label in Transfer.Status.choices
+    }
+
+    if selected_status in valid_statuses:
+        transfers = transfers.filter(
+            status=selected_status
+        )
+    else:
+        selected_status = ""
+
+    reservation_count = reservations.count()
+    transfer_count = transfers.count()
+
+    reservation_page = Paginator(
+        reservations, 10
+    ).get_page(
+        request.GET.get("reservation_page")
+    )
+
+    transfer_page = Paginator(
+        transfers, 10
+    ).get_page(
+        request.GET.get("transfer_page")
+    )
+
+    return render(
+        request,
+        "workflows/transfers.html",
+        {
+            "reservations": reservation_page.object_list,
+            "transfers": transfer_page.object_list,
+            "reservation_page": reservation_page,
+            "transfer_page": transfer_page,
+            "reservation_count": reservation_count,
+            "transfer_count": transfer_count,
+            "selected_status": selected_status,
+            "status_choices": Transfer.Status.choices,
+        },
+    )
+
+@role_required("Custodian")
+def arrange_transfer_view(request, reservation_id):
+    """
+    Arrange an approved reservation for an asset
+    assigned to the current source custodian.
+    """
+
+    reservation = get_object_or_404(
+        Reservation.objects.select_related(
+            "request",
+            "request__asset",
+        ),
+        pk=reservation_id,
+    )
+
+    # The custodian must own the source asset.
+    if reservation.request.asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    # Never change transfer state through GET.
+    if request.method != "POST":
+        return redirect("transfer_management")
+
+    try:
+        arrange_transfer(
+            actor=request.user,
+            reservation_id=reservation.pk,
+        )
+
+    except ValidationError as error:
+        errors = (
+            error.messages
+            if hasattr(error, "messages")
+            else [str(error)]
+        )
+
+        return render(
+            request,
+            "workflows/transfer_action_error.html",
+            {
+                "errors": errors,
+                "reservation": reservation,
+            },
+            status=400,
+        )
+
+    return redirect("transfer_management")
+
+@role_required("Custodian")
+def dispatch_transfer_view(request, transfer_id):
+    """
+    Dispatch an arranged transfer.
+
+    Only the assigned source custodian can dispatch
+    the transfer. The existing service handles stock
+    movements, status changes, and validation.
+    """
+
+    transfer = get_object_or_404(
+        Transfer.objects.select_related(
+            "reservation",
+            "reservation__request",
+            "reservation__request__asset",
+        ),
+        pk=transfer_id,
+    )
+
+    asset = transfer.reservation.request.asset
+
+    if asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    # State-changing actions require POST.
+    if request.method != "POST":
+        return redirect("transfer_management")
+
+    try:
+        dispatch_transfer(
+            actor=request.user,
+            transfer_id=transfer.pk,
+        )
+
+    except ValidationError as error:
+        errors = (
+            error.messages
+            if hasattr(error, "messages")
+            else [str(error)]
+        )
+
+        return render(
+            request,
+            "workflows/transfer_action_error.html",
+            {
+                "errors": errors,
+                "transfer": transfer,
+            },
+            status=400,
+        )
+
+    return redirect("transfer_management")
+
+@role_required("Approver/Admin")
+def incoming_transfers_view(request):
+    """
+    Display incoming transfers for departments where
+    the current user is an active destination approver.
+    """
+
+    authorized_department_ids = (
+        DepartmentApprover.objects.filter(
+            user=request.user,
+            is_active=True,
+            department__is_active=True,
+        )
+        .values_list("department_id", flat=True)
+    )
+
+    transfers = (
+        Transfer.objects
+        .filter(
+            reservation__request__destination_department_id__in=(
+                authorized_department_ids
+            ),
+        )
+        .select_related(
+            "reservation",
+            "reservation__request",
+            "reservation__request__asset",
+            "reservation__request__requester",
+            "reservation__request__destination_department",
+        )
+        .order_by("-arranged_at", "-pk")
+    )
+
+    selected_status = request.GET.get(
+        "status", ""
+    ).strip()
+
+    valid_statuses = {
+        value for value, label in Transfer.Status.choices
+    }
+
+    if selected_status in valid_statuses:
+        transfers = transfers.filter(
+            status=selected_status
+        )
+    else:
+        selected_status = ""
+
+    paginator = Paginator(transfers, 10)
+
+    page_obj = paginator.get_page(
+        request.GET.get("page")
+    )
+
+    return render(
+        request,
+        "workflows/incoming_transfers.html",
+        {
+            "transfers": page_obj.object_list,
+            "page_obj": page_obj,
+            "total_transfers": paginator.count,
+            "selected_status": selected_status,
+            "status_choices": Transfer.Status.choices,
+        },
+    )
+
+@role_required("Approver/Admin")
+def confirm_transfer_receipt_view(request, transfer_id):
+    if request.method != "POST":
+        return redirect("incoming_transfers")
+
+    transfer = get_object_or_404(
+        Transfer.objects.select_related(
+            "reservation__request__destination_department",
+        ),
+        pk=transfer_id,
+    )
+
+    department = transfer.reservation.request.destination_department
+
+    is_authorized = DepartmentApprover.objects.filter(
+        user=request.user,
+        department=department,
+        is_active=True,
+        department__is_active=True,
+    ).exists()
+
+    if not is_authorized:
+        raise PermissionDenied
+
+    try:
+        confirm_transfer_receipt(
+            actor=request.user,
+            transfer_id=transfer.pk,
+        )
+    except ValidationError as error:
+        errors = (
+            error.messages
+            if hasattr(error, "messages")
+            else [str(error)]
+        )
+
+        return render(
+            request,
+            "workflows/transfer_action_error.html",
+            {
+                "errors": errors,
+                "transfer": transfer,
+            },
+            status=400,
+        )
+
+    return redirect("incoming_transfers")
+
+@role_required("Approver/Admin")
+def report_transfer_dispute_view(request, transfer_id):
+    if request.method != "POST":
+        return redirect("incoming_transfers")
+
+    transfer = get_object_or_404(
+        Transfer.objects.select_related(
+            "reservation__request__destination_department",
+        ),
+        pk=transfer_id,
+    )
+
+    department = transfer.reservation.request.destination_department
+
+    is_authorized = DepartmentApprover.objects.filter(
+        user=request.user,
+        department=department,
+        is_active=True,
+        department__is_active=True,
+    ).exists()
+
+    if not is_authorized:
+        raise PermissionDenied
+
+    reason = request.POST.get("reason", "").strip()
+
+    try:
+        if not reason:
+            raise ValidationError(
+                "A dispute reason is required."
+            )
+
+        if len(reason) > 2000:
+            raise ValidationError(
+                "Dispute reason cannot exceed 2000 characters."
+            )
+
+        report_transfer_dispute(
+            actor=request.user,
+            transfer_id=transfer.pk,
+            reason=reason,
+        )
+
+    except ValidationError as error:
+        errors = (
+            error.messages
+            if hasattr(error, "messages")
+            else [str(error)]
+        )
+
+        return render(
+            request,
+            "workflows/transfer_action_error.html",
+            {
+                "errors": errors,
+                "transfer": transfer,
+            },
+            status=400,
+        )
+
+    return redirect("incoming_transfers")
+
+@role_required("Custodian")
+def cancel_arranged_transfer_view(request, transfer_id):
+    if request.method != "POST":
+        return redirect("transfer_management")
+
+    transfer = get_object_or_404(
+        Transfer.objects.select_related(
+            "reservation__request__asset",
+        ),
+        pk=transfer_id,
+    )
+
+    asset = transfer.reservation.request.asset
+
+    if asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    reason = request.POST.get("reason", "").strip()
+
+    try:
+        if not reason:
+            raise ValidationError(
+                "A cancellation reason is required."
+            )
+
+        if len(reason) > 2000:
+            raise ValidationError(
+                "Cancellation reason cannot exceed 2000 characters."
+            )
+
+        cancel_arranged_transfer(
+            actor=request.user,
+            transfer_id=transfer.pk,
+            reason=reason,
+        )
+
+    except ValidationError as error:
+        errors = (
+            error.messages
+            if hasattr(error, "messages")
+            else [str(error)]
+        )
+
+        return render(
+            request,
+            "workflows/transfer_action_error.html",
+            {
+                "errors": errors,
+                "transfer": transfer,
+            },
+            status=400,
+        )
+
+    return redirect("transfer_management")
