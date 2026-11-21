@@ -14,6 +14,8 @@ from .views import (
     confirm_transfer_receipt_view,
     report_transfer_dispute_view,
     cancel_arranged_transfer_view,
+    notifications_view,
+    notification_mark_read_view,
 
 )
 
@@ -78,6 +80,16 @@ urlpatterns = [
     "transfers/<int:transfer_id>/cancel/",
     cancel_arranged_transfer_view,
     name="cancel_arranged_transfer",
+    ),
+    path(
+    "notifications/",
+    notifications_view,
+    name="notifications",
+    ),
+    path(
+    "notifications/<int:notification_id>/read/",
+    notification_mark_read_view,
+    name="notification_mark_read",
     ),
 
 ]

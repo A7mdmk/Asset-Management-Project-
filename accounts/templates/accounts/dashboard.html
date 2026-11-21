@@ -1,4 +1,4 @@
-
+﻿
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -281,14 +281,26 @@
 
 
 
-        <div class="card">
-            <h3>Notifications</h3>
-            <p>
-                View updates about asset requests
-                and transfers.
-            </p>
-            <span class="pending">Coming soon</span>
-        </div>
+
+<div class="card">
+    <h3>Notifications</h3>
+
+    <p>
+        View updates about asset requests,
+        approvals, reservations, and transfers.
+    </p>
+
+    <p>
+        <strong>
+            {{ unread_notifications }}
+        </strong>
+        unread notification{{ unread_notifications|pluralize }}
+    </p>
+
+    <a href="{% url 'notifications' %}">
+        View Notifications
+    </a>
+</div>
 
     </section>
 

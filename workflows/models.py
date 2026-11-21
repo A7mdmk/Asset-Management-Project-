@@ -334,3 +334,58 @@ class Transfer(models.Model):
             f"Reservation #{self.reservation_id} "
             f"({self.status})"
         )
+
+class Notification(models.Model):
+
+    class NotificationType(models.TextChoices):
+        REQUEST = "Request", "Request"
+        APPROVAL = "Approval", "Approval"
+        RESERVATION = "Reservation", "Reservation"
+        TRANSFER = "Transfer", "Transfer"
+        ASSET = "Asset", "Asset"
+        SYSTEM = "System", "System"
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+
+    notification_type = models.CharField(
+        max_length=20,
+        choices=NotificationType.choices,
+        default=NotificationType.SYSTEM,
+    )
+
+    title = models.CharField(max_length=150)
+
+    message = models.TextField(max_length=1000)
+
+    target_url = models.CharField(
+        max_length=500,
+        blank=True,
+    )
+
+    is_read = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+    )
+
+    read_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(
+                fields=["recipient", "is_read", "created_at"],
+                name="notif_recipient_read_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.recipient} - {self.title}"

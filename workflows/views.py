@@ -22,7 +22,16 @@ from .models import Reservation, Transfer
 from .services import confirm_transfer_receipt
 from .services import report_transfer_dispute
 from .services import cancel_arranged_transfer
+from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
+from django.shortcuts import render
+from django.core.exceptions import ValidationError
+from django.http import HttpResponseNotAllowed
+from django.shortcuts import redirect
+from django.contrib import messages
 
+from .notification_services import mark_notification_read
+from .models import Notification
 
 @login_required
 def ai_recommendations_view(request):
@@ -815,3 +824,59 @@ def cancel_arranged_transfer_view(request, transfer_id):
         )
 
     return redirect("transfer_management")
+
+@login_required
+def notifications_view(request):
+    notifications = (
+        Notification.objects
+        .filter(recipient=request.user)
+        .order_by("-created_at", "-pk")
+    )
+
+    unread_count = notifications.filter(
+        is_read=False
+    ).count()
+
+    paginator = Paginator(notifications, 10)
+    page_obj = paginator.get_page(
+        request.GET.get("page")
+    )
+
+    return render(
+        request,
+        "workflows/notifications.html",
+        {
+            "notifications": page_obj.object_list,
+            "page_obj": page_obj,
+            "unread_count": unread_count,
+        },
+    )
+
+@login_required
+def notification_mark_read_view(request, notification_id):
+    """
+    Mark an owned notification as read.
+
+    GET requests cannot modify notification state.
+    """
+
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+
+    try:
+        mark_notification_read(
+            actor=request.user,
+            notification_id=notification_id,
+        )
+
+    except ValidationError as error:
+        for message in error.messages:
+            messages.error(request, message)
+
+    else:
+        messages.success(
+            request,
+            "Notification marked as read.",
+        )
+
+    return redirect("notifications")
