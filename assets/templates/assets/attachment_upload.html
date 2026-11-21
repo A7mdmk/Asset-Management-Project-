@@ -1,0 +1,177 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Upload Attachment | KU ResourceSavers</title>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        main {
+            max-width: 720px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .panel {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        h2 {
+            color: #17365d;
+            margin-top: 0;
+        }
+
+        .asset-info {
+            background: #f1f5f9;
+            padding: 18px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            line-height: 1.7;
+        }
+
+        .field {
+            margin-bottom: 22px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            font: inherit;
+            background: white;
+        }
+
+        .help {
+            color: #64748b;
+            font-size: 14px;
+            margin-top: 8px;
+            line-height: 1.6;
+        }
+
+        .errorlist {
+            color: #991b1b;
+            padding-left: 20px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 18px;
+            background: #17365d;
+            color: white;
+            border: none;
+            border-radius: 7px;
+            text-decoration: none;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .btn-secondary {
+            background: #e8eef5;
+            color: #17365d;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+
+<body>
+<header>
+    <h1>KU ResourceSavers</h1>
+</header>
+
+<main>
+    <section class="panel">
+
+        <h2>Upload Asset Attachment</h2>
+
+        <div class="asset-info">
+            <strong>Asset:</strong>
+            {{ asset.name }}
+
+            <div>
+                <strong>Department:</strong>
+                {{ asset.department.name }}
+            </div>
+        </div>
+
+        <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+
+            {{ form.non_field_errors }}
+
+            <div class="field">
+                {{ form.title.label_tag }}
+                {{ form.title }}
+                {{ form.title.errors }}
+            </div>
+
+            <div class="field">
+                {{ form.attachment_type.label_tag }}
+                {{ form.attachment_type }}
+                {{ form.attachment_type.errors }}
+            </div>
+
+            <div class="field">
+                {{ form.uploaded_file.label_tag }}
+                {{ form.uploaded_file }}
+                {{ form.uploaded_file.errors }}
+
+                <p class="help">
+                    Supported formats: PDF, JPG, JPEG, PNG.
+                    Maximum file size: 10 MB.
+                </p>
+            </div>
+
+            <div class="actions">
+                <button type="submit" class="btn">
+                    Upload Attachment
+                </button>
+
+                <a
+                    href="{% url 'asset_metadata' asset.pk %}"
+                    class="btn btn-secondary"
+                >
+                    Back to Asset Details
+                </a>
+            </div>
+        </form>
+
+    </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,161 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Delete Specification | KU ResourceSavers</title>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        main {
+            max-width: 700px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .panel {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        h2 { color: #991b1b; margin-top: 0; }
+
+        .info {
+            background: #f1f5f9;
+            padding: 18px;
+            border-radius: 8px;
+            line-height: 1.8;
+            margin-bottom: 22px;
+        }
+
+        .warning {
+            background: #fff7ed;
+            color: #9a3412;
+            padding: 16px;
+            border-radius: 8px;
+            line-height: 1.6;
+            margin-bottom: 22px;
+        }
+
+        .errorlist {
+            color: #991b1b;
+            padding-left: 20px;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 18px;
+            background: #991b1b;
+            color: white;
+            border: none;
+            border-radius: 7px;
+            text-decoration: none;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .btn-secondary {
+            background: #e8eef5;
+            color: #17365d;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+</header>
+
+<main>
+    <section class="panel">
+
+        <h2>Delete Technical Specification</h2>
+
+        <div class="info">
+            <div>
+                <strong>Asset:</strong>
+                {{ asset.name }}
+            </div>
+
+            <div>
+                <strong>Department:</strong>
+                {{ asset.department.name }}
+            </div>
+
+            <div>
+                <strong>Specification:</strong>
+                {{ specification.name }}
+            </div>
+
+            <div>
+                <strong>Value:</strong>
+                {{ specification.value }}
+            </div>
+        </div>
+
+        <div class="warning">
+            <strong>Warning:</strong>
+            You are about to permanently delete this
+            technical specification. This action cannot
+            be undone.
+        </div>
+
+        {% if errors %}
+            <ul class="errorlist">
+                {% for error in errors %}
+                    <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+
+        <form method="post">
+            {% csrf_token %}
+
+            <div class="actions">
+                <button type="submit" class="btn">
+                    Confirm Deletion
+                </button>
+
+                <a
+                    href="{% url 'asset_metadata' asset.pk %}"
+                    class="btn btn-secondary"
+                >
+                    Cancel
+                </a>
+            </div>
+        </form>
+
+    </section>
+</main>
+
+</body>
+</html>

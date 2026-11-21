@@ -1,4 +1,4 @@
-
+﻿
 from django.urls import path
 
 from .views import (
@@ -19,7 +19,14 @@ from .views import (
     disposition_request_view,
     disposition_execute_view,
     disposition_cancel_view,
-
+    asset_metadata_view,
+    asset_specification_add_view,
+    asset_specification_edit_view,
+    asset_specification_delete_view,
+    asset_attachment_upload_view,
+    asset_attachment_edit_view,
+    asset_attachment_delete_view,
+    asset_attachment_download_view,
 )
 
 
@@ -108,6 +115,46 @@ urlpatterns = [
     "dispositions/<int:disposition_id>/cancel/",
     disposition_cancel_view,
     name="disposition_cancel",
+    ),
+    path(
+    "manage/<uuid:asset_id>/metadata/",
+    asset_metadata_view,
+    name="asset_metadata",
+    ),
+    path(
+    "manage/<uuid:asset_id>/specifications/add/",
+    asset_specification_add_view,
+    name="asset_specification_add",
+    ),
+    path(
+    "specifications/<int:specification_id>/edit/",
+    asset_specification_edit_view,
+    name="asset_specification_edit",
+    ),
+    path(
+    "specifications/<int:specification_id>/delete/",
+    asset_specification_delete_view,
+    name="asset_specification_delete",
+    ),
+    path(
+    "manage/<uuid:asset_id>/attachments/upload/",
+    asset_attachment_upload_view,
+    name="asset_attachment_upload",
+    ),
+    path(
+    "attachments/<int:attachment_id>/edit/",
+    asset_attachment_edit_view,
+    name="asset_attachment_edit",
+    ),
+    path(
+    "attachments/<int:attachment_id>/delete/",
+    asset_attachment_delete_view,
+    name="asset_attachment_delete",
+    ),
+    path(
+    "attachments/<int:attachment_id>/download/",
+    asset_attachment_download_view,
+    name="asset_attachment_download",
     ),
 
 ]
