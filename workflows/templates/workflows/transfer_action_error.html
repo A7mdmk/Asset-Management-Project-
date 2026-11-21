@@ -1,0 +1,86 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1">
+
+    <title>Transfer Error | KU ResourceSavers</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        main {
+            max-width: 700px;
+            margin: 80px auto;
+            padding: 20px;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        h1 {
+            color: #991b1b;
+        }
+
+        .error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            border-radius: 8px;
+            padding: 14px;
+            margin-top: 12px;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #17365d;
+            color: white;
+            text-decoration: none;
+            padding: 12px 18px;
+            border-radius: 7px;
+            margin-top: 22px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+<main>
+    <section class="panel">
+
+        <h1>Transfer Action Could Not Be Completed</h1>
+
+        {% if reservation %}
+            <p>
+                Reservation #{{ reservation.pk }}
+            </p>
+        {% endif %}
+
+        {% for error in errors %}
+            <div class="error" role="alert">
+                {{ error }}
+            </div>
+        {% endfor %}
+
+        <a
+            href="{% url 'transfer_management' %}"
+            class="btn"
+        >
+            Back to Transfers
+        </a>
+
+    </section>
+</main>
+</body>
+</html>

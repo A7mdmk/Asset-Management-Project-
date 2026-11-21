@@ -1,4 +1,4 @@
-
+﻿
 from django.urls import path
 
 from .views import (
@@ -7,6 +7,14 @@ from .views import (
     approvals_view,
     my_requests_view,
     submit_request_view,
+    transfer_management_view,
+    arrange_transfer_view,
+    dispatch_transfer_view,
+    incoming_transfers_view,
+    confirm_transfer_receipt_view,
+    report_transfer_dispute_view,
+    cancel_arranged_transfer_view,
+
 )
 
 
@@ -36,4 +44,40 @@ urlpatterns = [
         approval_decision_view,
         name="approval_decision",
     ),
+    path(
+        "transfers/",
+        transfer_management_view,
+        name="transfer_management",
+    ),
+    path(
+        "transfers/arrange/<int:reservation_id>/",
+        arrange_transfer_view,
+        name="arrange_transfer",
+    ),
+    path(
+        "transfers/<int:transfer_id>/dispatch/",
+        dispatch_transfer_view,
+        name="dispatch_transfer",
+    ),
+    path(
+    "transfers/incoming/",
+    incoming_transfers_view,
+    name="incoming_transfers",
+    ),
+    path(
+    "transfers/<int:transfer_id>/receive/",
+    confirm_transfer_receipt_view,
+    name="confirm_transfer_receipt",
+    ),
+    path(
+    "transfers/<int:transfer_id>/dispute/",
+    report_transfer_dispute_view,
+    name="report_transfer_dispute",
+    ),
+    path(
+    "transfers/<int:transfer_id>/cancel/",
+    cancel_arranged_transfer_view,
+    name="cancel_arranged_transfer",
+    ),
+
 ]

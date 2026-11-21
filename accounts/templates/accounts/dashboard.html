@@ -197,6 +197,22 @@
 </div>
 {% endif %}
 
+{% if is_custodian %}
+<div class="card">
+    <h3>Transfer Management</h3>
+
+    <p>
+        View approved reservations, arrange resource
+        transfers, and track transfer statuses.
+    </p>
+
+    <a href="{% url 'transfer_management' %}">
+        Manage Transfers
+    </a>
+</div>
+{% endif %}
+
+
 
 
 {% if is_approver or is_custodian %}
@@ -213,6 +229,24 @@
     </a>
 </div>
 {% endif %}
+
+{% if is_approver %}
+<div class="card">
+
+    <h3>Incoming Transfers</h3>
+
+    <p>
+        Review transfers arriving at your authorized
+        department and manage receipt confirmations.
+    </p>
+
+    <a href="{% url 'incoming_transfers' %}">
+        View Incoming Transfers
+    </a>
+
+</div>
+{% endif %}
+
 
 
         <div class="card">

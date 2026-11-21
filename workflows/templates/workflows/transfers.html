@@ -1,0 +1,395 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Transfer Management | KU ResourceSavers</title>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        header h1 { margin: 0; font-size: 24px; }
+
+        header a {
+            color: white;
+            text-decoration: none;
+        }
+
+        main {
+            max-width: 1150px;
+            margin: 35px auto;
+            padding: 0 20px;
+        }
+
+        h2, h3 { color: #17365d; }
+
+        .subtitle {
+            color: #64748b;
+            line-height: 1.6;
+        }
+
+        .panel {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin: 22px 0;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        .record {
+            border: 1px solid #e2e8f0;
+            border-radius: 9px;
+            padding: 20px;
+            margin-top: 15px;
+        }
+
+        .record h4 {
+            margin: 0 0 12px;
+            color: #17365d;
+        }
+
+        .details {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .details p {
+            margin: 5px 0;
+            line-height: 1.6;
+        }
+
+        .status {
+            display: inline-block;
+            background: #e8eef5;
+            color: #17365d;
+            padding: 7px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #17365d;
+            color: white;
+            padding: 10px 16px;
+            border-radius: 7px;
+            border: none;
+            text-decoration: none;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        select {
+            padding: 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            margin-right: 10px;
+        }
+
+        .pagination {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .pagination a {
+            color: #17365d;
+            font-weight: bold;
+        }
+
+        .empty {
+            color: #64748b;
+            padding: 20px 0;
+        }
+
+        footer {
+            text-align: center;
+            color: #64748b;
+            padding: 30px;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+    <a href="{% url 'dashboard' %}">Back to Dashboard</a>
+</header>
+
+<main>
+
+    <h2>Transfer Management</h2>
+
+    <p class="subtitle">
+        Manage approved resource reservations and
+        monitor transfers for your assigned assets.
+    </p>
+
+    <section class="panel">
+
+        <h3>Approved Reservations ({{ reservation_count }})</h3>
+
+        <p class="subtitle">
+            These reservations are approved and awaiting
+            transfer arrangement.
+        </p>
+
+        {% for reservation in reservations %}
+
+            <article class="record">
+
+                <h4>Reservation #{{ reservation.pk }}</h4>
+
+                <div class="details">
+                    <p>
+                        <strong>Asset:</strong>
+                        {{ reservation.request.asset.name }}
+                    </p>
+
+                    <p>
+                        <strong>Requester:</strong>
+                        {{ reservation.request.requester.username }}
+                    </p>
+
+                    <p>
+                        <strong>Destination:</strong>
+                        {{ reservation.request.destination_department.name }}
+                    </p>
+
+                    <p>
+                        <strong>Quantity:</strong>
+                        {{ reservation.quantity }}
+                    </p>
+
+                    <p>
+                        <strong>Status:</strong>
+                        <span class="status">
+                            {{ reservation.get_status_display }}
+                        </span>
+                    </p>
+                </div>
+
+<form
+    method="post"
+    action="{% url 'arrange_transfer' reservation.pk %}"
+    style="margin-top: 18px;"
+>
+    {% csrf_token %}
+
+    <button type="submit" class="btn">
+        Arrange Transfer
+    </button>
+</form>
+
+            </article>
+
+        {% empty %}
+
+            <p class="empty">
+                No approved reservations awaiting transfer.
+            </p>
+
+        {% endfor %}
+
+        {% if reservation_page.has_other_pages %}
+            <nav class="pagination" aria-label="Reservation pages">
+                {% if reservation_page.has_previous %}
+                    <a href="?reservation_page={{ reservation_page.previous_page_number }}&amp;transfer_page={{ transfer_page.number }}&amp;status={{ selected_status|urlencode }}">
+                        Previous
+                    </a>
+                {% endif %}
+
+                <span>
+                    Page {{ reservation_page.number }}
+                    of {{ reservation_page.paginator.num_pages }}
+                </span>
+
+                {% if reservation_page.has_next %}
+                    <a href="?reservation_page={{ reservation_page.next_page_number }}&amp;transfer_page={{ transfer_page.number }}&amp;status={{ selected_status|urlencode }}">
+                        Next
+                    </a>
+                {% endif %}
+            </nav>
+        {% endif %}
+
+    </section>
+
+    <section class="panel">
+
+        <h3>Transfers ({{ transfer_count }})</h3>
+
+        <form method="get">
+            <label for="status">Filter by status:</label>
+
+            <select id="status" name="status">
+                <option value="">All Statuses</option>
+
+                {% for value, label in status_choices %}
+                    <option value="{{ value }}"
+                        {% if selected_status == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                {% endfor %}
+            </select>
+
+            <button class="btn" type="submit">
+                Apply Filter
+            </button>
+        </form>
+
+        {% for transfer in transfers %}
+
+            <article class="record">
+
+                <h4>Transfer #{{ transfer.pk }}</h4>
+
+                <div class="details">
+
+                    <p>
+                        <strong>Asset:</strong>
+                        {{ transfer.reservation.request.asset.name }}
+                    </p>
+
+                    <p>
+                        <strong>Requester:</strong>
+                        {{ transfer.reservation.request.requester.username }}
+                    </p>
+
+                    <p>
+                        <strong>Destination:</strong>
+                        {{ transfer.reservation.request.destination_department.name }}
+                    </p>
+
+                    <p>
+                        <strong>Quantity:</strong>
+                        {{ transfer.quantity }}
+                    </p>
+
+                    <p>
+                        <strong>Status:</strong>
+                        <span class="status">
+                            {{ transfer.get_status_display }}
+                        </span>
+                    </p>
+
+                    <p>
+                        <strong>Arranged:</strong>
+                        {{ transfer.arranged_at|date:"M d, Y H:i" }}
+                    </p>
+
+                </div>
+
+{% if transfer.status == "Arranged" %}
+    <form
+        method="post"
+        action="{% url 'dispatch_transfer' transfer.pk %}"
+        style="margin-top: 18px;"
+    >
+        {% csrf_token %}
+
+        <button type="submit" class="btn">
+            Dispatch Transfer
+        </button>
+    </form>
+
+<form
+    method="post"
+    action="{% url 'cancel_arranged_transfer' transfer.pk %}"
+    style="margin-top: 18px;"
+>
+    {% csrf_token %}
+
+    <label
+        for="cancel-reason-{{ transfer.pk }}"
+        style="display: block; margin-bottom: 8px;"
+    >
+        <strong>Cancellation Reason</strong>
+    </label>
+
+    <textarea
+        id="cancel-reason-{{ transfer.pk }}"
+        name="reason"
+        rows="3"
+        maxlength="2000"
+        required
+        placeholder="Explain why this transfer should be cancelled..."
+        style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 7px;"
+    ></textarea>
+
+    <button
+        type="submit"
+        class="btn"
+        style="margin-top: 10px; background: #991b1b;"
+    >
+        Cancel Arranged Transfer
+    </button>
+</form>
+
+{% endif %}
+
+            </article>
+
+        {% empty %}
+
+            <p class="empty">
+                No transfers match your selection.
+            </p>
+
+        {% endfor %}
+
+        {% if transfer_page.has_other_pages %}
+            <nav class="pagination" aria-label="Transfer pages">
+                {% if transfer_page.has_previous %}
+                    <a href="?transfer_page={{ transfer_page.previous_page_number }}&amp;reservation_page={{ reservation_page.number }}&amp;status={{ selected_status|urlencode }}">
+                        Previous
+                    </a>
+                {% endif %}
+
+                <span>
+                    Page {{ transfer_page.number }}
+                    of {{ transfer_page.paginator.num_pages }}
+                </span>
+
+                {% if transfer_page.has_next %}
+                    <a href="?transfer_page={{ transfer_page.next_page_number }}&amp;reservation_page={{ reservation_page.number }}&amp;status={{ selected_status|urlencode }}">
+                        Next
+                    </a>
+                {% endif %}
+            </nav>
+        {% endif %}
+
+    </section>
+
+</main>
+
+<footer>
+    KU ResourceSavers | COSC 336 | Group 7
+</footer>
+
+</body>
+</html>
