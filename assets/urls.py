@@ -30,7 +30,7 @@ from .views import (
     sustainability_dashboard_view,
     operational_reports_view,
     export_reports_csv_view,
-
+    ai_classification_view,
 
 )
 
@@ -175,6 +175,11 @@ urlpatterns = [
         "reports/export/",
         export_reports_csv_view,
         name="export_reports_csv",
+    ),
+        path(
+        "ai-classification/",
+        ai_classification_view,
+        name="ai_classification",
     ),
 
 ]

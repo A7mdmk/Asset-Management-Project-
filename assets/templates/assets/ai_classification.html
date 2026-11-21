@@ -1,0 +1,226 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Classification | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 22px 6%;
+        }
+
+        header h1 {
+            margin: 0;
+        }
+
+        main {
+            max-width: 800px;
+            margin: 35px auto;
+            padding: 0 20px;
+        }
+
+        h2 {
+            color: #17365d;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-top: 25px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        label {
+            display: block;
+            margin: 18px 0 8px;
+            font-weight: bold;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            font: inherit;
+        }
+
+        button {
+            background: #17365d;
+            color: white;
+            border: 0;
+            padding: 12px 22px;
+            border-radius: 7px;
+            margin-top: 20px;
+            cursor: pointer;
+        }
+
+        .result {
+            background: #effaf3;
+            border-left: 4px solid #29865a;
+            padding: 20px;
+            margin-top: 25px;
+            border-radius: 8px;
+        }
+
+        .error {
+            color: #991b1b;
+            margin-top: 18px;
+        }
+
+        .note {
+            color: #627083;
+            line-height: 1.6;
+        }
+
+        a {
+            color: #236eaa;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+</header>
+
+<main>
+
+    <a href="{% url 'asset_registration' %}">
+        Back to Asset Registration
+    </a>
+
+    <h2>AI-Assisted Asset Classification</h2>
+
+    <p class="note">
+        Gemini suggests an existing asset category
+        based on the name and description you provide.
+        You must review the suggestion before using it.
+    </p>
+
+    <section class="panel">
+
+        <form method="post">
+            {% csrf_token %}
+
+            <label for="asset_name">Asset Name</label>
+
+            <input
+                type="text"
+                id="asset_name"
+                name="asset_name"
+                maxlength="120"
+                value="{{ asset_name }}"
+                required
+            >
+
+            <label for="description">
+                Asset Description
+            </label>
+
+            <textarea
+                id="description"
+                name="description"
+                rows="4"
+                maxlength="2000"
+            >{{ description }}</textarea>
+
+            <button type="submit">
+                Suggest Category with AI
+            </button>
+        </form>
+
+        {% if error %}
+        <p class="error" role="alert">
+            {{ error }}
+        </p>
+        {% endif %}
+
+        {% if suggestion %}
+        <div class="result">
+
+            <h3>Gemini Classification Result</h3>
+
+            {% if suggestion.category_id %}
+                <p>
+                    <strong>Suggested Category:</strong>
+                    {{ suggestion.category_name }}
+                </p>
+            {% else %}
+                <p>
+                    No suitable existing category found.
+                </p>
+            {% endif %}
+
+            <p>
+                <strong>Explanation:</strong>
+                {{ suggestion.explanation }}
+            </p>
+
+            <p class="note">
+                This is an AI suggestion only.
+                Nothing has been saved or changed.
+            </p>
+
+            
+{% if suggestion.category_id %}
+    <form
+        method="get"
+        action="{% url 'asset_registration' %}"
+    >
+        <input
+            type="hidden"
+            name="name"
+            value="{{ asset_name }}"
+        >
+
+        <input
+            type="hidden"
+            name="description"
+            value="{{ description }}"
+        >
+
+        <input
+            type="hidden"
+            name="suggested_category"
+            value="{{ suggestion.category_id }}"
+        >
+
+        <button type="submit">
+            Use This Suggestion
+        </button>
+    </form>
+{% endif %}
+
+<p>
+    <a href="{% url 'asset_registration' %}">
+        Return Without Suggestion
+    </a>
+</p>
+
+
+        </div>
+        {% endif %}
+
+    </section>
+
+</main>
+
+</body>
+</html>
