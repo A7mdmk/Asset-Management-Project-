@@ -301,6 +301,32 @@
         View Notifications
     </a>
 </div>
+{% if is_custodian or is_approver or user.is_staff or user.is_superuser %}
+<div class="card">
+    <h3>Sustainability Dashboard</h3>
+    <p>
+        Monitor campus resource reuse,
+        repairs, donations, recycling,
+        and asset availability.
+    </p>
+    <a href="{% url 'sustainability_dashboard' %}">
+        View Sustainability Dashboard
+    </a>
+</div>
+{% endif %}
+
+{% if is_custodian or is_approver or user.is_staff or user.is_superuser %}
+<div class="card">
+    <h3>Operational Reports</h3>
+    <p>
+        Review resource requests, transfers,
+        maintenance activity, and sustainability statistics.
+    </p>
+    <a href="{% url 'operational_reports' %}">
+        View Operational Reports
+    </a>
+</div>
+{% endif %}
 
     </section>
 

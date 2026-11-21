@@ -45,7 +45,7 @@ from .services import update_asset_attachment
 from .services import delete_asset_attachment
 from pathlib import Path
 from django.http import FileResponse, Http404
-
+from .sustainability_services import get_sustainability_data_readiness
 @login_required
 def asset_catalog(request):
     """
@@ -1432,3 +1432,143 @@ def asset_attachment_download_view(request, attachment_id):
         filename=filename,
         content_type="application/octet-stream",
     )
+
+from .sustainability_services import get_sustainability_summary
+
+
+@login_required
+def sustainability_dashboard_view(request):
+    allowed = (
+        request.user.is_superuser
+        or request.user.is_staff
+        or request.user.groups.filter(
+            name__in=["Custodian", "Approver/Admin"]
+        ).exists()
+    )
+
+    if not allowed:
+        raise PermissionDenied(
+            "You do not have permission to view sustainability reports."
+        )
+
+
+    summary = get_sustainability_summary()
+    readiness = get_sustainability_data_readiness()
+
+    return render(
+        request,
+        "assets/sustainability_dashboard.html",
+        {
+            "summary": summary,
+            "readiness": readiness,
+        },
+    )
+
+
+from .reporting_services import get_operational_report
+
+
+@login_required
+def operational_reports_view(request):
+    allowed = (
+        request.user.is_superuser
+        or request.user.is_staff
+        or request.user.groups.filter(
+            name__in=["Custodian", "Approver/Admin"]
+        ).exists()
+    )
+
+    if not allowed:
+        raise PermissionDenied(
+            "You do not have permission to view operational reports."
+        )
+
+    report = get_operational_report()
+
+    return render(
+        request,
+        "assets/operational_reports.html",
+        {"report": report},
+    )
+
+import csv
+
+from django.http import HttpResponse
+
+
+@login_required
+def export_reports_csv_view(request):
+    allowed = (
+        request.user.is_superuser
+        or request.user.is_staff
+        or request.user.groups.filter(
+            name__in=["Custodian", "Approver/Admin"]
+        ).exists()
+    )
+
+    if not allowed:
+        raise PermissionDenied(
+            "You do not have permission to export reports."
+        )
+
+    report_type = request.GET.get("type", "operational")
+
+    if report_type == "operational":
+        report = get_operational_report()
+
+        rows = [
+            ("Total Assets", report["total_assets"]),
+            ("Total Requests", report["total_requests"]),
+            ("Pending Requests", report["pending_requests"]),
+            ("Approved Requests", report["approved_requests"]),
+            ("Rejected Requests", report["rejected_requests"]),
+            ("Expired Requests", report["expired_requests"]),
+            ("Cancelled Requests", report["cancelled_requests"]),
+            ("Total Transfers", report["total_transfers"]),
+            ("Completed Transfers", report["completed_transfers"]),
+            ("Transferred Units", report["transferred_units"]),
+            ("Maintenance Records", report["total_maintenance"]),
+            ("Completed Maintenance", report["completed_maintenance"]),
+            ("Completed Dispositions", report["completed_dispositions"]),
+        ]
+
+        filename = "operational_report.csv"
+
+    elif report_type == "sustainability":
+        report = get_sustainability_summary()
+
+        rows = [
+            ("Registered Asset Records",
+             report["total_registered_assets"]),
+            ("Available Units", report["available_units"]),
+            ("Reused Units", report["reused_units"]),
+            ("Repaired Units", report["repaired_units"]),
+            ("Donated Units", report["donated_units"]),
+            ("Recycled Units", report["recycled_units"]),
+        ]
+
+        filename = "sustainability_report.csv"
+
+    else:
+        return HttpResponse(
+            "Invalid report type.",
+            status=400,
+        )
+
+    response = HttpResponse(
+        content_type="text/csv; charset=utf-8"
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="{filename}"'
+    )
+
+    # UTF-8 BOM helps Excel display Unicode text correctly.
+    response.write("\ufeff")
+
+    writer = csv.writer(response)
+    writer.writerow(["Metric", "Value"])
+
+    for label, value in rows:
+        writer.writerow([label, value])
+
+    return response

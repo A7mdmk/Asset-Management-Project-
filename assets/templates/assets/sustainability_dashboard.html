@@ -1,0 +1,217 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sustainability | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 22px 6%;
+        }
+
+        header h1 {
+            margin: 0;
+        }
+
+        main {
+            max-width: 1100px;
+            margin: 35px auto;
+            padding: 0 20px;
+        }
+
+        h2 {
+            color: #17365d;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(230px, 1fr));
+            gap: 20px;
+            margin-top: 25px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 28px;
+            box-shadow: 0 3px 12px #0000000a;
+            border-top: 4px solid #29865a;
+        }
+
+        .card h3 {
+            font-size: 15px;
+            color: #627083;
+            margin: 0 0 15px;
+        }
+
+        .value {
+            color: #17365d;
+            font-size: 34px;
+            font-weight: bold;
+        }
+
+        .note {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 30px;
+            line-height: 1.7;
+            color: #627083;
+        }
+
+        a {
+            color: #236eaa;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+</header>
+
+<main>
+    <a href="{% url 'dashboard' %}">
+        Back to Dashboard
+    </a>
+
+    <h2>Sustainability Dashboard</h2>
+    <p>
+    <a href="{% url 'export_reports_csv' %}?type=sustainability">
+        Download Sustainability CSV
+    </a>
+</p>
+
+    <p>
+        Campus resource reuse, repair, donation,
+        recycling, and availability.
+    </p>
+
+    <section class="grid">
+
+        <div class="card">
+            <h3>Registered Asset Records</h3>
+            <div class="value">
+                {{ summary.total_registered_assets }}
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Available Units</h3>
+            <div class="value">
+                {{ summary.available_units }}
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Reused Units</h3>
+            <div class="value">
+                {{ summary.reused_units }}
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Repaired Units</h3>
+            <div class="value">
+                {{ summary.repaired_units }}
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Donated Units</h3>
+            <div class="value">
+                {{ summary.donated_units }}
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Recycled Units</h3>
+            <div class="value">
+                {{ summary.recycled_units }}
+            </div>
+        </div>
+
+    </section>
+
+<h2>Data Readiness</h2>
+
+<p>
+    Availability of financial and physical
+    asset data for future sustainability estimates.
+</p>
+
+<section class="grid">
+
+    <div class="card">
+        <h3>Assets With Financial Values</h3>
+        <div class="value">
+            {{ readiness.assets_with_value }}
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Assets With Mass Measurements</h3>
+        <div class="value">
+            {{ readiness.assets_with_mass }}
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Assets With Both Measurements</h3>
+        <div class="value">
+            {{ readiness.assets_with_both }}
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Assets Missing Financial Values</h3>
+        <div class="value">
+            {{ readiness.assets_missing_value }}
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Assets Missing Mass Measurements</h3>
+        <div class="value">
+            {{ readiness.assets_missing_mass }}
+        </div>
+    </div>
+
+</section>
+
+    <div class="note">
+        <strong>About these indicators</strong>
+        <p>
+            Values are calculated from recorded asset
+            balances, completed maintenance activities,
+            received transfers, and completed dispositions.
+        </p>
+
+        <p>
+            Reuse and repair counts represent recorded units
+            processed through these workflows, not necessarily
+            unique physical assets. Environmental impact and
+            financial savings are not estimated on this page.
+        </p>
+    </div>
+</main>
+
+</body>
+</html>
