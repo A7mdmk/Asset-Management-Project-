@@ -227,8 +227,37 @@ def asset_registration_view(request):
             else:
                 return redirect("asset_management")
 
+
     else:
-        form = AssetRegistrationForm()
+        initial_data = {}
+
+        name = request.GET.get("name", "")
+        description = request.GET.get("description", "")
+        suggested_category = request.GET.get(
+            "suggested_category", ""
+        )
+
+        if len(name) <= 120:
+            initial_data["name"] = name
+
+        if len(description) <= 2000:
+            initial_data["description"] = description
+
+        if suggested_category.isdecimal():
+            category = (
+                AssetRegistrationForm()
+                .fields["category"]
+                .queryset
+                .filter(pk=int(suggested_category))
+                .first()
+            )
+
+            if category is not None:
+                initial_data["category"] = category.pk
+
+        form = AssetRegistrationForm(
+            initial=initial_data
+        )
 
     return render(
         request,
@@ -237,6 +266,7 @@ def asset_registration_view(request):
             "form": form,
         },
     )
+
 
 @role_required("Custodian")
 def asset_publication_view(request, asset_id):
@@ -1572,3 +1602,54 @@ def export_reports_csv_view(request):
         writer.writerow([label, value])
 
     return response
+
+from workflows.ai_classification import suggest_asset_category
+
+
+@role_required("Custodian")
+def ai_classification_view(request):
+    context = {
+        "asset_name": "",
+        "description": "",
+        "suggestion": None,
+        "error": "",
+    }
+
+    if request.method == "POST":
+        name = request.POST.get("asset_name", "").strip()
+        description = request.POST.get("description", "").strip()
+
+        context["asset_name"] = name
+        context["description"] = description
+
+        if not name:
+            context["error"] = "Please enter an asset name."
+
+        elif len(name) > 120:
+            context["error"] = (
+                "Asset name cannot exceed 120 characters."
+            )
+
+        elif len(description) > 2000:
+            context["error"] = (
+                "Description cannot exceed 2000 characters."
+            )
+
+        else:
+            try:
+                context["suggestion"] = suggest_asset_category(
+                    name=name,
+                    description=description,
+                )
+
+            except (ValueError, Exception):
+                context["error"] = (
+                    "AI classification is temporarily unavailable. "
+                    "Please try again later or select a category manually."
+                )
+
+    return render(
+        request,
+        "assets/ai_classification.html",
+        context,
+    )
