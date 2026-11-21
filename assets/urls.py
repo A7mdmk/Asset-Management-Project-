@@ -31,6 +31,7 @@ from .views import (
     operational_reports_view,
     export_reports_csv_view,
     ai_classification_view,
+    ai_operational_report_view,
 
 )
 
@@ -180,6 +181,11 @@ urlpatterns = [
         "ai-classification/",
         ai_classification_view,
         name="ai_classification",
+    ),
+        path(
+        "reports/ai/",
+        ai_operational_report_view,
+        name="ai_operational_report",
     ),
 
 ]

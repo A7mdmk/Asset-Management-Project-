@@ -1653,3 +1653,41 @@ def ai_classification_view(request):
         "assets/ai_classification.html",
         context,
     )
+
+from .ai_reporting import generate_ai_operational_report
+
+
+@login_required
+def ai_operational_report_view(request):
+    allowed = (
+        request.user.is_superuser
+        or request.user.is_staff
+        or request.user.groups.filter(
+            name__in=["Custodian", "Approver/Admin"]
+        ).exists()
+    )
+
+    if not allowed:
+        raise PermissionDenied(
+            "You do not have permission to generate AI reports."
+        )
+
+    context = {
+        "ai_report": None,
+        "error": "",
+    }
+
+    if request.method == "POST":
+        try:
+            context["ai_report"] = generate_ai_operational_report()
+        except Exception:
+            context["error"] = (
+                "AI reporting is temporarily unavailable. "
+                "Please try again later."
+            )
+
+    return render(
+        request,
+        "assets/ai_operational_report.html",
+        context,
+    )
