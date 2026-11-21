@@ -1642,11 +1642,24 @@ def ai_classification_view(request):
                     description=description,
                 )
 
-            except (ValueError, Exception):
+
+            except Exception:
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.exception(
+                    "Gemini AI classification failed"
+                )
+
                 context["error"] = (
                     "AI classification is temporarily unavailable. "
-                    "Please try again later or select a category manually."
+                    "Please select a category manually or "
+                    "contact your system administrator. "
+                    "The administrator should check the Gemini "
+                    "API key, internet connection, model access, "
+                    "and API quota."
                 )
+
 
     return render(
         request,
