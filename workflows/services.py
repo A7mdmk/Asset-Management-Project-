@@ -6,7 +6,9 @@ from assets.models import StockMovement
 from assets.services import record_stock_movement
 from accounts.models import DepartmentApprover
 from assets.models import Asset, Department, StockBalance
-
+from django.urls import reverse
+from .notification_services import create_notification
+from .models import Notification
 from .models import ResourceRequest, RequestApproval, Reservation, Transfer
 
 
@@ -83,10 +85,26 @@ def submit_request(
         reason=reason,
     )
 
+
     resource_request.full_clean()
     resource_request.save()
 
+# Notify the requester after successful submission.
+    create_notification(
+        recipient=requester,
+        notification_type=Notification.NotificationType.REQUEST,
+        title="Resource Request Submitted",
+        message=(
+            f"Your request #{resource_request.pk} for "
+            f"{asset.name} has been submitted "
+            "and is awaiting approval."
+        ),
+        target_url=reverse("my_requests"),
+    )
+
     return resource_request
+
+
 
 
 @transaction.atomic
@@ -115,7 +133,11 @@ def decide_request(
 
     resource_request = (
         ResourceRequest.objects.select_for_update()
-        .select_related("asset", "destination_department")
+        .select_related(
+            "asset",
+            "destination_department",
+            "requester",
+        )
         .get(pk=request_id)
     )
 
@@ -124,13 +146,33 @@ def decide_request(
             "Only pending requests can be decided."
         )
 
+
     # Pending requests expire after 48 hours.
     if resource_request.expires_at <= timezone.now():
         resource_request.status = ResourceRequest.Status.EXPIRED
         resource_request.save(
             update_fields=["status", "updated_at"]
         )
+
+        # Notify the requester about expiration.
+        if resource_request.requester.is_active:
+            create_notification(
+                recipient=resource_request.requester,
+                notification_type=(
+                    Notification.NotificationType.REQUEST
+                ),
+                title="Resource Request Expired",
+                message=(
+                    f"Your request #{resource_request.pk} for "
+                    f"{resource_request.asset.name} has expired "
+                    "because it was not fully approved "
+                    "within 48 hours."
+                ),
+                target_url=reverse("my_requests"),
+            )
+
         return resource_request
+
 
     if resource_request.requester_id == approver.pk:
         raise ValidationError(
@@ -148,7 +190,10 @@ def decide_request(
         )
 
     previous_approvals = list(
-        resource_request.approvals.order_by("created_at", "pk")
+        resource_request.approvals.order_by(
+            "created_at",
+            "pk",
+        )
     )
 
     if any(
@@ -175,6 +220,7 @@ def decide_request(
 
     # STAGE 1: DESTINATION ACCEPTANCE
     if stage == RequestApproval.Stage.DESTINATION:
+
         if previous_approvals:
             raise ValidationError(
                 "Destination acceptance must happen first."
@@ -189,7 +235,9 @@ def decide_request(
 
         authorized = DepartmentApprover.objects.filter(
             user=approver,
-            department_id=resource_request.destination_department_id,
+            department_id=(
+                resource_request.destination_department_id
+            ),
             is_active=True,
         ).exists()
 
@@ -203,12 +251,14 @@ def decide_request(
 
     # STAGE 2: SOURCE CUSTODIAN RELEASE
     elif stage == RequestApproval.Stage.SOURCE:
+
         destination_approval = next(
             (
                 item
                 for item in previous_approvals
                 if (
-                    item.stage == RequestApproval.Stage.DESTINATION
+                    item.stage
+                    == RequestApproval.Stage.DESTINATION
                     and item.decision
                     == RequestApproval.Decision.APPROVED
                 )
@@ -239,6 +289,7 @@ def decide_request(
             )
 
         if decision == RequestApproval.Decision.APPROVED:
+
             if asset.publication != Asset.Publication.PUBLISHED:
                 raise ValidationError(
                     "The asset is no longer published."
@@ -257,8 +308,9 @@ def decide_request(
                     "The asset is no longer eligible."
                 )
 
-            stock = StockBalance.objects.select_for_update().get(
-                asset=asset
+            stock = (
+                StockBalance.objects.select_for_update()
+                .get(asset=asset)
             )
 
             if stock.free < resource_request.quantity:
@@ -266,13 +318,18 @@ def decide_request(
                     "Insufficient free stock."
                 )
 
-            # Final source approval reserves stock exactly once.
+            # Reserve stock exactly once.
+            # Free -> Held.
             stock.free -= resource_request.quantity
             stock.held += resource_request.quantity
 
             stock.full_clean()
             stock.save(
-                update_fields=["free", "held", "updated_at"]
+                update_fields=[
+                    "free",
+                    "held",
+                    "updated_at",
+                ]
             )
 
     # Record the approval decision.
@@ -287,12 +344,12 @@ def decide_request(
     approval.full_clean()
     approval.save()
 
-    # Create a reservation only after successful
-    # final source approval.
+    # Create reservation after final source approval.
     if (
         stage == RequestApproval.Stage.SOURCE
         and decision == RequestApproval.Decision.APPROVED
     ):
+
         reservation = Reservation(
             request=resource_request,
             source_approval=approval,
@@ -303,8 +360,7 @@ def decide_request(
         reservation.full_clean()
         reservation.save()
 
-        # Record the Free -> Held movement created
-        # by final source approval.
+        # Record the Free -> Held stock movement.
         record_stock_movement(
             asset=resource_request.asset,
             movement_type=(
@@ -316,9 +372,12 @@ def decide_request(
             actor=approver,
             reference_type="Reservation",
             reference_id=reservation.pk,
-            notes="Stock reserved after final source approval",
+            notes=(
+                "Stock reserved after final source approval"
+            ),
         )
 
+    # Update the resource request status.
     if decision == RequestApproval.Decision.REJECTED:
         resource_request.status = ResourceRequest.Status.REJECTED
 
@@ -328,6 +387,59 @@ def decide_request(
     resource_request.save(
         update_fields=["status", "updated_at"]
     )
+
+    # ---------------------------------------------
+    # AUTOMATIC APPROVAL NOTIFICATIONS
+    # ---------------------------------------------
+
+    if resource_request.requester.is_active:
+
+        if decision == RequestApproval.Decision.REJECTED:
+
+            notification_title = (
+                "Resource Request Rejected"
+            )
+
+            notification_message = (
+                f"Your request #{resource_request.pk} for "
+                f"{resource_request.asset.name} was rejected "
+                f"during the {stage} approval stage."
+            )
+
+        elif stage == RequestApproval.Stage.DESTINATION:
+
+            notification_title = (
+                "Destination Approval Completed"
+            )
+
+            notification_message = (
+                f"Your request #{resource_request.pk} for "
+                f"{resource_request.asset.name} received "
+                "destination approval and is awaiting "
+                "source custodian release."
+            )
+
+        else:
+
+            notification_title = (
+                "Resource Request Approved"
+            )
+
+            notification_message = (
+                f"Your request #{resource_request.pk} for "
+                f"{resource_request.asset.name} has been "
+                "fully approved."
+            )
+
+        create_notification(
+            recipient=resource_request.requester,
+            notification_type=(
+                Notification.NotificationType.APPROVAL
+            ),
+            title=notification_title,
+            message=notification_message,
+            target_url=reverse("my_requests"),
+        )
 
     return resource_request
 
@@ -571,12 +683,32 @@ def arrange_transfer(*, actor, reservation_id):
     transfer.full_clean()
     transfer.save()
 
+
     # Mark the reservation as converted.
     reservation.status = Reservation.Status.CONVERTED
     reservation.full_clean()
     reservation.save(update_fields=["status"])
 
+    # Notify the requester that the transfer is arranged.
+    requester = resource_request.requester
+
+    if requester.is_active:
+        create_notification(
+            recipient=requester,
+            notification_type=(
+                Notification.NotificationType.TRANSFER
+            ),
+            title="Asset Transfer Arranged",
+            message=(
+                f"Transfer #{transfer.pk} for "
+                f"{asset.name} has been arranged. "
+                "Your approved resource is awaiting dispatch."
+            ),
+            target_url=reverse("my_requests"),
+        )
+
     return transfer
+
 
 @transaction.atomic
 def dispatch_transfer(*, actor, transfer_id):
@@ -707,7 +839,27 @@ def dispatch_transfer(*, actor, transfer_id):
         ]
     )
 
+
+    # Notify the requester after dispatch.
+    requester = resource_request.requester
+
+    if requester.is_active:
+        create_notification(
+            recipient=requester,
+            notification_type=(
+                Notification.NotificationType.TRANSFER
+            ),
+            title="Asset Transfer Dispatched",
+            message=(
+                f"Transfer #{transfer.pk} for "
+                f"{asset.name} has been dispatched "
+                "and is on its way to the destination."
+            ),
+            target_url=reverse("my_requests"),
+        )
+
     return transfer
+
 
 @transaction.atomic
 def confirm_transfer_receipt(*, actor, transfer_id):
@@ -860,7 +1012,27 @@ def confirm_transfer_receipt(*, actor, transfer_id):
         ]
     )
 
+
+    # Notify the requester after receipt confirmation.
+    requester = resource_request.requester
+
+    if requester.is_active:
+        create_notification(
+            recipient=requester,
+            notification_type=(
+                Notification.NotificationType.TRANSFER
+            ),
+            title="Asset Transfer Received",
+            message=(
+                f"Transfer #{transfer.pk} for "
+                f"{asset.name} has been received "
+                "and confirmed by the destination department."
+            ),
+            target_url=reverse("my_requests"),
+        )
+
     return transfer
+
 
 @transaction.atomic
 def report_transfer_dispute(*, actor, transfer_id, reason):
@@ -998,7 +1170,27 @@ def report_transfer_dispute(*, actor, transfer_id, reason):
         ]
     )
 
+
+    # Notify the requester after a transfer dispute.
+    requester = resource_request.requester
+
+    if requester.is_active:
+        create_notification(
+            recipient=requester,
+            notification_type=(
+                Notification.NotificationType.TRANSFER
+            ),
+            title="Asset Transfer Disputed",
+            message=(
+                f"Transfer #{transfer.pk} for "
+                f"{asset.name} has been disputed. "
+                f"Reason: {transfer.dispute_reason}"
+            ),
+            target_url=reverse("my_requests"),
+        )
+
     return transfer
+
 
 @transaction.atomic
 def cancel_arranged_transfer(*, actor, transfer_id, reason):
@@ -1176,9 +1368,28 @@ def cancel_arranged_transfer(*, actor, transfer_id, reason):
         ]
     )
 
+
     resource_request.status = ResourceRequest.Status.CANCELLED
     resource_request.save(
         update_fields=["status", "updated_at"]
     )
+
+    # Notify the requester after transfer cancellation.
+    requester = resource_request.requester
+
+    if requester.is_active:
+        create_notification(
+            recipient=requester,
+            notification_type=(
+                Notification.NotificationType.TRANSFER
+            ),
+            title="Asset Transfer Cancelled",
+            message=(
+                f"Transfer #{transfer.pk} for "
+                f"{asset.name} has been cancelled. "
+                f"Reason: {transfer.cancellation_reason}"
+            ),
+            target_url=reverse("my_requests"),
+        )
 
     return transfer
