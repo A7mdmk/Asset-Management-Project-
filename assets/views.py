@@ -20,6 +20,13 @@ from .forms import RepairCompletionForm
 from .services import complete_asset_repair
 from .forms import MaintenanceCancellationForm
 from .services import cancel_asset_maintenance
+from .models import AssetInspection
+from .forms import InspectionRequestForm
+from .services import request_asset_inspection
+from .forms import InspectionCompletionForm
+from .services import complete_asset_inspection
+from .services import cancel_asset_inspection
+
 @login_required
 def asset_catalog(request):
     """
@@ -552,3 +559,195 @@ def maintenance_cancel_view(request, maintenance_id):
             "form": form,
         },
     )
+
+@role_required("Custodian")
+def inspection_management_view(request):
+    """
+    Display inspection records for assets assigned
+    to the currently logged-in custodian.
+    """
+
+    inspections = (
+        AssetInspection.objects
+        .filter(asset__custodian=request.user)
+        .select_related(
+            "asset",
+            "asset__department",
+            "requested_by",
+            "inspected_by",
+        )
+        .order_by("-requested_at", "-pk")
+    )
+
+    selected_status = request.GET.get(
+        "status", ""
+    ).strip()
+
+    valid_statuses = {
+        value
+        for value, label in AssetInspection.Status.choices
+    }
+
+    if selected_status in valid_statuses:
+        inspections = inspections.filter(
+            status=selected_status
+        )
+    else:
+        selected_status = ""
+
+    paginator = Paginator(inspections, 10)
+
+    page_obj = paginator.get_page(
+        request.GET.get("page")
+    )
+
+    return render(
+        request,
+        "assets/inspections.html",
+        {
+            "inspections": page_obj.object_list,
+            "page_obj": page_obj,
+            "total_inspections": paginator.count,
+            "selected_status": selected_status,
+            "status_choices": AssetInspection.Status.choices,
+        },
+    )
+
+@role_required("Custodian")
+def inspection_request_view(request, asset_id):
+    asset = get_object_or_404(
+        Asset.objects.select_related(
+            "department",
+            "category",
+        ),
+        pk=asset_id,
+    )
+
+    if asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    if request.method == "POST":
+        form = InspectionRequestForm(request.POST)
+
+        if form.is_valid():
+            try:
+                request_asset_inspection(
+                    actor=request.user,
+                    asset_id=asset.pk,
+                    quantity=form.cleaned_data["quantity"],
+                )
+
+            except ValidationError as error:
+                messages = (
+                    error.messages
+                    if hasattr(error, "messages")
+                    else [str(error)]
+                )
+
+                for message in messages:
+                    form.add_error(None, message)
+
+            else:
+                return redirect("inspection_management")
+    else:
+        form = InspectionRequestForm()
+
+    return render(
+        request,
+        "assets/inspection_request.html",
+        {
+            "asset": asset,
+            "form": form,
+        },
+    )
+
+@role_required("Custodian")
+def inspection_complete_view(request, inspection_id):
+    inspection = get_object_or_404(
+        AssetInspection.objects.select_related(
+            "asset",
+            "asset__department",
+        ),
+        pk=inspection_id,
+    )
+
+    if inspection.asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    if inspection.status != AssetInspection.Status.PENDING:
+        return redirect("inspection_management")
+
+    if request.method == "POST":
+        form = InspectionCompletionForm(request.POST)
+
+        if form.is_valid():
+            try:
+                complete_asset_inspection(
+                    actor=request.user,
+                    inspection_id=inspection.pk,
+                    findings=form.cleaned_data["findings"],
+                    recommendation=form.cleaned_data["recommendation"],
+                )
+
+            except ValidationError as error:
+                messages = (
+                    error.messages
+                    if hasattr(error, "messages")
+                    else [str(error)]
+                )
+
+                for message in messages:
+                    form.add_error(None, message)
+
+            else:
+                return redirect("inspection_management")
+
+    else:
+        form = InspectionCompletionForm()
+
+    return render(
+        request,
+        "assets/inspection_complete.html",
+        {
+            "inspection": inspection,
+            "form": form,
+        },
+    )
+
+@role_required("Custodian")
+def inspection_cancel_view(request, inspection_id):
+    if request.method != "POST":
+        return redirect("inspection_management")
+
+    inspection = get_object_or_404(
+        AssetInspection.objects.select_related("asset"),
+        pk=inspection_id,
+    )
+
+    if inspection.asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    try:
+        cancel_asset_inspection(
+            actor=request.user,
+            inspection_id=inspection.pk,
+        )
+
+    except ValidationError as error:
+        messages = (
+            error.messages
+            if hasattr(error, "messages")
+            else [str(error)]
+        )
+
+        return render(
+            request,
+            "assets/inspection_action_error.html",
+            {
+                "inspection": inspection,
+                "errors": messages,
+            },
+            status=400,
+        )
+
+    return redirect("inspection_management")

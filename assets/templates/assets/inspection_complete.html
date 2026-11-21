@@ -1,0 +1,192 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Complete Inspection | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        main {
+            max-width: 750px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .panel {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        h2 {
+            color: #17365d;
+            margin-top: 0;
+        }
+
+        .info {
+            background: #f1f5f9;
+            padding: 18px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            line-height: 1.8;
+        }
+
+        .field {
+            margin-bottom: 22px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            font: inherit;
+        }
+
+        .errorlist {
+            color: #991b1b;
+            padding-left: 20px;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #17365d;
+            color: white;
+            padding: 12px 18px;
+            border: none;
+            border-radius: 7px;
+            text-decoration: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .btn-secondary {
+            background: #e8eef5;
+            color: #17365d;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .note {
+            color: #64748b;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+</header>
+
+<main>
+    <section class="panel">
+
+        <h2>Complete Asset Inspection</h2>
+
+        <div class="info">
+            <div>
+                <strong>Inspection:</strong>
+                #{{ inspection.pk }}
+            </div>
+
+            <div>
+                <strong>Asset:</strong>
+                {{ inspection.asset.name }}
+            </div>
+
+            <div>
+                <strong>Department:</strong>
+                {{ inspection.asset.department.name }}
+            </div>
+
+            <div>
+                <strong>Quantity:</strong>
+                {{ inspection.quantity }}
+            </div>
+
+            <div>
+                <strong>Status:</strong>
+                {{ inspection.get_status_display }}
+            </div>
+        </div>
+
+        <p class="note">
+            Record your findings and select the
+            recommended next action. Completing this
+            inspection does not automatically repair,
+            retire, or dispose of the asset.
+        </p>
+
+        <form method="post">
+            {% csrf_token %}
+
+            {{ form.non_field_errors }}
+
+            <div class="field">
+                {{ form.findings.label_tag }}
+                {{ form.findings }}
+                {{ form.findings.errors }}
+            </div>
+
+            <div class="field">
+                {{ form.recommendation.label_tag }}
+                {{ form.recommendation }}
+                {{ form.recommendation.errors }}
+            </div>
+
+            <div class="actions">
+                <button type="submit" class="btn">
+                    Complete Inspection
+                </button>
+
+                <a
+                    href="{% url 'inspection_management' %}"
+                    class="btn btn-secondary"
+                >
+                    Back to Inspections
+                </a>
+            </div>
+        </form>
+
+    </section>
+</main>
+
+</body>
+</html>

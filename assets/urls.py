@@ -10,7 +10,11 @@ from .views import (
     maintenance_report_view,
     maintenance_start_view,
     maintenance_complete_view,
-    maintenance_cancel_view
+    maintenance_cancel_view,
+    inspection_management_view,
+    inspection_request_view,
+    inspection_complete_view,
+    inspection_cancel_view
 )
 
 
@@ -60,4 +64,25 @@ urlpatterns = [
     maintenance_cancel_view,
     name="maintenance_cancel",
     ),
+    path(
+    "inspections/",
+    inspection_management_view,
+    name="inspection_management",
+    ),
+    path(
+    "inspections/request/<uuid:asset_id>/",
+    inspection_request_view,
+    name="inspection_request",
+    ),
+    path(
+    "inspections/<int:inspection_id>/complete/",
+    inspection_complete_view,
+    name="inspection_complete",
+    ),
+    path(
+    "inspections/<int:inspection_id>/cancel/",
+    inspection_cancel_view,
+    name="inspection_cancel",
+    ),
+
 ]

@@ -164,3 +164,40 @@ class MaintenanceCancellationForm(forms.Form):
             }
         ),
     )
+
+class InspectionRequestForm(forms.Form):
+    quantity = forms.IntegerField(
+        min_value=1,
+        initial=1,
+        label="Inspection Quantity",
+        widget=forms.NumberInput(
+            attrs={
+                "min": "1",
+                "placeholder": "Enter quantity",
+            }
+        ),
+    )
+
+from .models import AssetInspection
+
+
+class InspectionCompletionForm(forms.Form):
+    findings = forms.CharField(
+        max_length=2000,
+        label="Inspection Findings",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 5,
+                "placeholder": (
+                    "Describe the asset's condition "
+                    "and your inspection findings..."
+                ),
+            }
+        ),
+    )
+
+    recommendation = forms.ChoiceField(
+        choices=AssetInspection.Recommendation.choices,
+        label="Recommendation",
+        widget=forms.Select,
+    )

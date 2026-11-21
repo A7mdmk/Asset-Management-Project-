@@ -212,6 +212,21 @@
 </div>
 {% endif %}
 
+{% if is_custodian %}
+<div class="card">
+    <h3>Asset Inspections</h3>
+
+    <p>
+        Review inspection requests, findings,
+        recommendations, and statuses for your assets.
+    </p>
+
+    <a href="{% url 'inspection_management' %}">
+        Manage Inspections
+    </a>
+</div>
+{% endif %}
+
 
 
 
