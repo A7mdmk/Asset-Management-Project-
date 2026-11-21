@@ -227,6 +227,23 @@
 </div>
 {% endif %}
 
+{% if is_custodian %}
+<div class="card">
+
+    <h3>Asset Disposition</h3>
+
+    <p>
+        Manage asset retirement, donation,
+        recycling, and disposal requests.
+    </p>
+
+    <a href="{% url 'disposition_management' %}">
+        Manage Dispositions
+    </a>
+
+</div>
+{% endif %}
+
 
 
 

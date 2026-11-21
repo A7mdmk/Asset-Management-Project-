@@ -14,7 +14,12 @@ from .views import (
     inspection_management_view,
     inspection_request_view,
     inspection_complete_view,
-    inspection_cancel_view
+    inspection_cancel_view,
+    disposition_management_view,
+    disposition_request_view,
+    disposition_execute_view,
+    disposition_cancel_view,
+
 )
 
 
@@ -83,6 +88,26 @@ urlpatterns = [
     "inspections/<int:inspection_id>/cancel/",
     inspection_cancel_view,
     name="inspection_cancel",
+    ),
+    path(
+    "dispositions/",
+    disposition_management_view,
+    name="disposition_management",
+    ),
+    path(
+    "dispositions/request/<int:inspection_id>/",
+    disposition_request_view,
+    name="disposition_request",
+    ),
+    path(
+    "dispositions/<int:disposition_id>/execute/",
+    disposition_execute_view,
+    name="disposition_execute",
+    ),
+    path(
+    "dispositions/<int:disposition_id>/cancel/",
+    disposition_cancel_view,
+    name="disposition_cancel",
     ),
 
 ]
