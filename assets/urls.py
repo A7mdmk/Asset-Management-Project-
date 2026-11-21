@@ -1,4 +1,4 @@
-﻿
+
 from django.urls import path
 
 from .views import (
@@ -27,6 +27,11 @@ from .views import (
     asset_attachment_edit_view,
     asset_attachment_delete_view,
     asset_attachment_download_view,
+    sustainability_dashboard_view,
+    operational_reports_view,
+    export_reports_csv_view,
+
+
 )
 
 
@@ -155,6 +160,21 @@ urlpatterns = [
     "attachments/<int:attachment_id>/download/",
     asset_attachment_download_view,
     name="asset_attachment_download",
+    ),
+        path(
+        "sustainability/",
+        sustainability_dashboard_view,
+        name="sustainability_dashboard",
+    ),
+        path(
+        "reports/",
+        operational_reports_view,
+        name="operational_reports",
+    ),
+        path(
+        "reports/export/",
+        export_reports_csv_view,
+        name="export_reports_csv",
     ),
 
 ]
