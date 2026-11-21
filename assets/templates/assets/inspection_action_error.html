@@ -1,0 +1,63 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Inspection Error | KU ResourceSavers</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        main {
+            max-width: 650px;
+            margin: 70px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+        }
+
+        h1 {
+            color: #991b1b;
+        }
+
+        li {
+            margin: 10px 0;
+        }
+
+        a {
+            display: inline-block;
+            padding: 12px 18px;
+            background: #17365d;
+            color: white;
+            border-radius: 7px;
+            text-decoration: none;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Inspection Action Failed</h1>
+
+        <p>
+            Inspection #{{ inspection.pk }}
+            could not be updated.
+        </p>
+
+        <ul>
+            {% for error in errors %}
+                <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+
+        <a href="{% url 'inspection_management' %}">
+            Back to Inspections
+        </a>
+    </main>
+</body>
+</html>

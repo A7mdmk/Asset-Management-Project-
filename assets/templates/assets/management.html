@@ -320,6 +320,16 @@
 
                     <h3>{{ asset.name }}</h3>
 
+{% if asset.lifecycle == "Active" %}
+    <a
+        href="{% url 'inspection_request' asset.pk %}"
+        class="btn btn-secondary"
+        style="margin-bottom: 12px;"
+    >
+        Request Inspection
+    </a>
+{% endif %}
+
                     <p>
                         <strong>Asset Tag:</strong>
                         {{ asset.asset_tag|default:"Not assigned" }}
