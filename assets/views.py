@@ -33,6 +33,18 @@ from .forms import DispositionExecutionForm
 from .services import execute_asset_disposition
 from .forms import DispositionCancellationForm
 from .services import cancel_asset_disposition
+from .models import AssetSpecification, AssetAttachment
+from .forms import AssetSpecificationForm
+from .services import add_asset_specification
+from .services import update_asset_specification
+from .services import delete_asset_specification
+from .forms import AssetAttachmentUploadForm
+from .services import add_asset_attachment
+from .forms import AssetAttachmentEditForm
+from .services import update_asset_attachment
+from .services import delete_asset_attachment
+from pathlib import Path
+from django.http import FileResponse, Http404
 
 @login_required
 def asset_catalog(request):
@@ -991,4 +1003,432 @@ def disposition_cancel_view(request, disposition_id):
             "disposition": disposition,
             "form": form,
         },
+    )
+
+@role_required("Custodian")
+def asset_metadata_view(request, asset_id):
+    """
+    Show technical specifications and attachments
+    for an asset assigned to the current custodian.
+    """
+
+    asset = get_object_or_404(
+        Asset.objects.select_related(
+            "category",
+            "department",
+        ),
+        pk=asset_id,
+    )
+
+    if asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    specifications = (
+        AssetSpecification.objects
+        .filter(asset=asset)
+        .order_by("name", "pk")
+    )
+
+    attachments = (
+        AssetAttachment.objects
+        .filter(asset=asset)
+        .order_by("-uploaded_at", "-pk")
+    )
+
+    return render(
+        request,
+        "assets/metadata.html",
+        {
+            "asset": asset,
+            "specifications": specifications,
+            "attachments": attachments,
+        },
+    )
+
+@role_required("Custodian")
+def asset_specification_add_view(request, asset_id):
+    asset = get_object_or_404(
+        Asset.objects.select_related(
+            "category",
+            "department",
+        ),
+        pk=asset_id,
+    )
+
+    if asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    if request.method == "POST":
+        form = AssetSpecificationForm(request.POST)
+
+        if form.is_valid():
+            try:
+                add_asset_specification(
+                    actor=request.user,
+                    asset_id=asset.pk,
+                    name=form.cleaned_data["name"],
+                    value=form.cleaned_data["value"],
+                )
+
+            except ValidationError as error:
+                if hasattr(error, "message_dict"):
+                    for field, messages in error.message_dict.items():
+                        target = field if field in form.fields else None
+
+                        for message in messages:
+                            form.add_error(target, message)
+                else:
+                    for message in error.messages:
+                        form.add_error(None, message)
+
+            else:
+                return redirect(
+                    "asset_metadata",
+                    asset_id=asset.pk,
+                )
+
+    else:
+        form = AssetSpecificationForm()
+
+    return render(
+        request,
+        "assets/specification_add.html",
+        {
+            "asset": asset,
+            "form": form,
+        },
+    )
+
+@role_required("Custodian")
+def asset_specification_edit_view(request, specification_id):
+    specification = get_object_or_404(
+        AssetSpecification.objects.select_related(
+            "asset",
+            "asset__department",
+        ),
+        pk=specification_id,
+    )
+
+    asset = specification.asset
+
+    if asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    if request.method == "POST":
+        form = AssetSpecificationForm(request.POST)
+
+        if form.is_valid():
+            try:
+                update_asset_specification(
+                    actor=request.user,
+                    specification_id=specification.pk,
+                    name=form.cleaned_data["name"],
+                    value=form.cleaned_data["value"],
+                )
+
+            except ValidationError as error:
+                if hasattr(error, "message_dict"):
+                    for field, error_messages in error.message_dict.items():
+                        target = field if field in form.fields else None
+
+                        for message in error_messages:
+                            form.add_error(target, message)
+                else:
+                    for message in error.messages:
+                        form.add_error(None, message)
+
+            else:
+                return redirect(
+                    "asset_metadata",
+                    asset_id=asset.pk,
+                )
+
+    else:
+        form = AssetSpecificationForm(
+            initial={
+                "name": specification.name,
+                "value": specification.value,
+            }
+        )
+
+    return render(
+        request,
+        "assets/specification_edit.html",
+        {
+            "asset": asset,
+            "specification": specification,
+            "form": form,
+        },
+    )
+
+@role_required("Custodian")
+def asset_specification_delete_view(request, specification_id):
+    specification = get_object_or_404(
+        AssetSpecification.objects.select_related(
+            "asset",
+            "asset__department",
+        ),
+        pk=specification_id,
+    )
+
+    asset = specification.asset
+
+    if asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    if request.method == "POST":
+        try:
+            delete_asset_specification(
+                actor=request.user,
+                specification_id=specification.pk,
+            )
+
+        except ValidationError as error:
+            errors = (
+                error.messages
+                if hasattr(error, "messages")
+                else [str(error)]
+            )
+
+            return render(
+                request,
+                "assets/specification_delete.html",
+                {
+                    "asset": asset,
+                    "specification": specification,
+                    "errors": errors,
+                },
+            )
+
+        else:
+            return redirect(
+                "asset_metadata",
+                asset_id=asset.pk,
+            )
+
+    return render(
+        request,
+        "assets/specification_delete.html",
+        {
+            "asset": asset,
+            "specification": specification,
+        },
+    )
+
+@role_required("Custodian")
+def asset_attachment_upload_view(request, asset_id):
+    asset = get_object_or_404(
+        Asset.objects.select_related(
+            "category",
+            "department",
+        ),
+        pk=asset_id,
+    )
+
+    if asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    if request.method == "POST":
+        form = AssetAttachmentUploadForm(
+            request.POST,
+            request.FILES,
+        )
+
+        if form.is_valid():
+            try:
+                add_asset_attachment(
+                    actor=request.user,
+                    asset_id=asset.pk,
+                    title=form.cleaned_data["title"],
+                    attachment_type=(
+                        form.cleaned_data["attachment_type"]
+                    ),
+                    uploaded_file=(
+                        form.cleaned_data["uploaded_file"]
+                    ),
+                )
+
+            except ValidationError as error:
+                if hasattr(error, "message_dict"):
+                    for field, error_messages in error.message_dict.items():
+                        target = field if field in form.fields else None
+
+                        for message in error_messages:
+                            form.add_error(target, message)
+                else:
+                    for message in error.messages:
+                        form.add_error(None, message)
+
+            else:
+                return redirect(
+                    "asset_metadata",
+                    asset_id=asset.pk,
+                )
+
+    else:
+        form = AssetAttachmentUploadForm()
+
+    return render(
+        request,
+        "assets/attachment_upload.html",
+        {
+            "asset": asset,
+            "form": form,
+        },
+    )
+
+@role_required("Custodian")
+def asset_attachment_edit_view(request, attachment_id):
+    attachment = get_object_or_404(
+        AssetAttachment.objects.select_related(
+            "asset",
+            "asset__department",
+        ),
+        pk=attachment_id,
+    )
+
+    asset = attachment.asset
+
+    if asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    if request.method == "POST":
+        form = AssetAttachmentEditForm(request.POST)
+
+        if form.is_valid():
+            try:
+                update_asset_attachment(
+                    actor=request.user,
+                    attachment_id=attachment.pk,
+                    title=form.cleaned_data["title"],
+                    attachment_type=(
+                        form.cleaned_data["attachment_type"]
+                    ),
+                )
+
+            except ValidationError as error:
+                if hasattr(error, "message_dict"):
+                    for field, error_messages in error.message_dict.items():
+                        target = field if field in form.fields else None
+
+                        for message in error_messages:
+                            form.add_error(target, message)
+                else:
+                    for message in error.messages:
+                        form.add_error(None, message)
+
+            else:
+                return redirect(
+                    "asset_metadata",
+                    asset_id=asset.pk,
+                )
+
+    else:
+        form = AssetAttachmentEditForm(
+            initial={
+                "title": attachment.title,
+                "attachment_type": attachment.attachment_type,
+            }
+        )
+
+    return render(
+        request,
+        "assets/attachment_edit.html",
+        {
+            "asset": asset,
+            "attachment": attachment,
+            "form": form,
+        },
+    )
+
+@role_required("Custodian")
+def asset_attachment_delete_view(request, attachment_id):
+    attachment = get_object_or_404(
+        AssetAttachment.objects.select_related(
+            "asset",
+            "asset__department",
+        ),
+        pk=attachment_id,
+    )
+
+    asset = attachment.asset
+
+    if asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    if request.method == "POST":
+        try:
+            delete_asset_attachment(
+                actor=request.user,
+                attachment_id=attachment.pk,
+            )
+
+        except ValidationError as error:
+            errors = (
+                error.messages
+                if hasattr(error, "messages")
+                else [str(error)]
+            )
+
+            return render(
+                request,
+                "assets/attachment_delete.html",
+                {
+                    "asset": asset,
+                    "attachment": attachment,
+                    "errors": errors,
+                },
+            )
+
+        else:
+            return redirect(
+                "asset_metadata",
+                asset_id=asset.pk,
+            )
+
+    return render(
+        request,
+        "assets/attachment_delete.html",
+        {
+            "asset": asset,
+            "attachment": attachment,
+        },
+    )
+
+@login_required
+def asset_attachment_download_view(request, attachment_id):
+    attachment = get_object_or_404(
+        AssetAttachment.objects.select_related("asset"),
+        pk=attachment_id,
+    )
+
+    asset = attachment.asset
+    user = request.user
+
+    is_superuser = user.is_active and user.is_superuser
+
+    is_assigned_custodian = (
+        user.is_active
+        and asset.custodian_id == user.pk
+        and user.groups.filter(name="Custodian").exists()
+    )
+
+    if not (is_superuser or is_assigned_custodian):
+        raise PermissionDenied
+
+    if not attachment.file:
+        raise Http404("Attachment file not found.")
+
+    try:
+        file_handle = attachment.file.open("rb")
+    except (FileNotFoundError, OSError, ValueError):
+        raise Http404("Attachment file not found.")
+
+    filename = Path(attachment.file.name).name
+
+    return FileResponse(
+        file_handle,
+        as_attachment=True,
+        filename=filename,
+        content_type="application/octet-stream",
     )

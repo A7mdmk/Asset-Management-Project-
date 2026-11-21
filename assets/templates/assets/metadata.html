@@ -1,0 +1,300 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Asset Details | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 20px 6%;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        main {
+            max-width: 1000px;
+            margin: 35px auto;
+            padding: 0 20px;
+        }
+
+        h2, h3 {
+            color: #17365d;
+        }
+
+        .panel {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 22px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        .details {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .record {
+            border: 1px solid #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 12px;
+            overflow-wrap: anywhere;
+        }
+
+        .record p {
+            line-height: 1.6;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #17365d;
+            color: white;
+            padding: 11px 17px;
+            border-radius: 7px;
+            text-decoration: none;
+            font-weight: bold;
+            margin-top: 8px;
+        }
+
+        .btn-secondary {
+            background: #e8eef5;
+            color: #17365d;
+        }
+
+        .btn-danger {
+            background: #991b1b;
+            color: white;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .empty {
+            color: #64748b;
+        }
+
+        footer {
+            text-align: center;
+            padding: 30px;
+            color: #64748b;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+</header>
+
+<main>
+
+    <a
+        href="{% url 'asset_management' %}"
+        class="btn btn-secondary"
+    >
+        Back to Asset Management
+    </a>
+
+    <!-- Asset Information -->
+
+    <section class="panel" style="margin-top: 25px;">
+
+        <h2>{{ asset.name }}</h2>
+
+        <div class="details">
+
+            <p>
+                <strong>Category:</strong>
+                {{ asset.category.name }}
+            </p>
+
+            <p>
+                <strong>Department:</strong>
+                {{ asset.department.name }}
+            </p>
+
+            <p>
+                <strong>Asset Tag:</strong>
+                {{ asset.asset_tag|default:"Not assigned" }}
+            </p>
+
+            <p>
+                <strong>Location:</strong>
+                {{ asset.location }}
+            </p>
+
+            <p>
+                <strong>Quantity:</strong>
+                {{ asset.quantity }}
+            </p>
+
+            <p>
+                <strong>Condition:</strong>
+                {{ asset.get_condition_display }}
+            </p>
+
+        </div>
+
+    </section>
+
+    <!-- Technical Specifications -->
+
+    <section class="panel">
+
+        <h3>Technical Specifications</h3>
+
+        <a
+            href="{% url 'asset_specification_add' asset.pk %}"
+            class="btn"
+        >
+            + Add Specification
+        </a>
+
+        {% for specification in specifications %}
+
+            <div class="record">
+
+                <strong>
+                    {{ specification.name }}
+                </strong>
+
+                <p>
+                    {{ specification.value }}
+                </p>
+
+                <div class="actions">
+
+                    <a
+                        href="{% url 'asset_specification_edit' specification.pk %}"
+                        class="btn"
+                    >
+                        Edit Specification
+                    </a>
+
+                    <a
+                        href="{% url 'asset_specification_delete' specification.pk %}"
+                        class="btn btn-danger"
+                    >
+                        Delete Specification
+                    </a>
+
+                </div>
+
+            </div>
+
+        {% empty %}
+
+            <p class="empty">
+                No technical specifications added yet.
+            </p>
+
+        {% endfor %}
+
+    </section>
+
+    <!-- Asset Attachments -->
+
+    <section class="panel">
+
+        <h3>Asset Attachments</h3>
+
+        <a
+            href="{% url 'asset_attachment_upload' asset.pk %}"
+            class="btn"
+        >
+            + Upload Attachment
+        </a>
+
+        {% for attachment in attachments %}
+
+            <div class="record">
+
+                <strong>
+                    {{ attachment.title }}
+                </strong>
+
+                <p>
+                    <strong>Type:</strong>
+                    {{ attachment.get_attachment_type_display }}
+                </p>
+
+                <p>
+                    <strong>Uploaded:</strong>
+                    {{ attachment.uploaded_at|date:"M d, Y H:i" }}
+                </p>
+
+                <div class="actions">
+
+                    {% if attachment.file %}
+
+                        <a
+                            href="{% url 'asset_attachment_download' attachment.pk %}"
+                            class="btn"
+                        >
+                            Download Attachment
+                        </a>
+
+                    {% endif %}
+
+                    <a
+                        href="{% url 'asset_attachment_edit' attachment.pk %}"
+                        class="btn"
+                    >
+                        Edit Attachment
+                    </a>
+
+                    <a
+                        href="{% url 'asset_attachment_delete' attachment.pk %}"
+                        class="btn btn-danger"
+                    >
+                        Delete Attachment
+                    </a>
+
+                </div>
+
+            </div>
+
+        {% empty %}
+
+            <p class="empty">
+                No attachments uploaded yet.
+            </p>
+
+        {% endfor %}
+
+    </section>
+
+</main>
+
+<footer>
+    KU ResourceSavers | COSC 336 | Group 7
+</footer>
+
+</body>
+</html>

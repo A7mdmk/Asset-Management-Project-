@@ -135,3 +135,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "dashboard"
 LOGOUT_REDIRECT_URL = "login"
+# Private asset attachment storage.
+# Do not expose this directory through public media routes.
+MEDIA_ROOT = BASE_DIR / "private_uploads"
+MEDIA_URL = "/_private_uploads/"

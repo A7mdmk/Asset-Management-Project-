@@ -325,7 +325,13 @@
                 <article class="asset-card">
 
                     <h3>{{ asset.name }}</h3>
-
+                    <a
+    href="{% url 'asset_metadata' asset.pk %}"
+    class="btn btn-secondary"
+    style="margin-bottom: 12px;"
+>
+    Specifications &amp; Attachments
+</a>
 {% if asset.lifecycle == "Active" %}
     <a
         href="{% url 'inspection_request' asset.pk %}"

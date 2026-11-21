@@ -2,7 +2,7 @@
 from django import forms
 from .models import AssetMaintenance
 from .models import Asset, Category, Department
-
+from .models import AssetAttachment
 
 class AssetRegistrationForm(forms.Form):
 
@@ -246,4 +246,66 @@ class DispositionCancellationForm(forms.Form):
                 ),
             }
         ),
+    )
+
+class AssetSpecificationForm(forms.Form):
+    name = forms.CharField(
+        max_length=100,
+        label="Specification Name",
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "e.g. RAM, Processor, Storage",
+            }
+        ),
+    )
+
+    value = forms.CharField(
+        max_length=500,
+        label="Specification Value",
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "e.g. 16 GB",
+            }
+        ),
+    )
+
+class AssetAttachmentUploadForm(forms.Form):
+    title = forms.CharField(
+        max_length=150,
+        label="Attachment Title",
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "e.g. Laptop User Manual",
+            }
+        ),
+    )
+
+    attachment_type = forms.ChoiceField(
+        choices=AssetAttachment.AttachmentType.choices,
+        label="Attachment Type",
+    )
+
+    uploaded_file = forms.FileField(
+        label="Attachment File",
+        widget=forms.ClearableFileInput(
+            attrs={
+                "accept": ".pdf,.jpg,.jpeg,.png",
+            }
+        ),
+    )
+
+class AssetAttachmentEditForm(forms.Form):
+    title = forms.CharField(
+        max_length=150,
+        label="Attachment Title",
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "e.g. Laptop User Manual",
+            }
+        ),
+    )
+
+    attachment_type = forms.ChoiceField(
+        choices=AssetAttachment.AttachmentType.choices,
+        label="Attachment Type",
     )
