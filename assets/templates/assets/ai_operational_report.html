@@ -1,0 +1,251 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Operational Report | KU ResourceSavers</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #243247;
+        }
+
+        header {
+            background: #17365d;
+            color: white;
+            padding: 22px 6%;
+        }
+
+        header h1 {
+            margin: 0;
+        }
+
+        main {
+            max-width: 950px;
+            margin: 35px auto;
+            padding: 0 20px;
+        }
+
+        h2, h3 {
+            color: #17365d;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 28px;
+            margin-top: 24px;
+            box-shadow: 0 3px 12px #0000000a;
+        }
+
+        .note {
+            color: #627083;
+            line-height: 1.7;
+        }
+
+        .button {
+            display: inline-block;
+            background: #17365d;
+            color: white;
+            border: 0;
+            border-radius: 7px;
+            padding: 13px 22px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 12px;
+        }
+
+        .error {
+            color: #991b1b;
+            margin-top: 20px;
+        }
+
+        .result {
+            background: #eff6ff;
+            border-left: 4px solid #17365d;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 18px;
+            line-height: 1.8;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .metric {
+            background: #f3f6fa;
+            border-radius: 8px;
+            padding: 18px;
+        }
+
+        .metric strong {
+            display: block;
+            color: #627083;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .metric span {
+            font-size: 26px;
+            font-weight: bold;
+            color: #17365d;
+        }
+
+        li {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+
+        a {
+            color: #236eaa;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>KU ResourceSavers</h1>
+</header>
+
+<main>
+
+    <a href="{% url 'operational_reports' %}">
+        Back to Operational Reports
+    </a>
+
+    <h2>AI-Generated Operational Report</h2>
+
+    <p class="note">
+        Generate a Gemini-written interpretation of recorded
+        asset-management activity. The AI explanation must
+        be reviewed against the verified statistics.
+    </p>
+
+    <section class="panel">
+
+        <h3>Generate Report</h3>
+
+        <form method="post">
+            {% csrf_token %}
+
+            <button class="button" type="submit">
+                Generate AI Report
+            </button>
+        </form>
+
+        {% if error %}
+            <p class="error" role="alert">
+                {{ error }}
+            </p>
+        {% endif %}
+
+        {% if ai_report %}
+
+            <div class="result">
+                <h3>AI Management Summary</h3>
+                <p>{{ ai_report.summary }}</p>
+            </div>
+
+            <h3>AI Observations</h3>
+
+            <ul>
+                {% for observation in ai_report.observations %}
+                    <li>{{ observation }}</li>
+                {% empty %}
+                    <li>No observations were provided.</li>
+                {% endfor %}
+            </ul>
+
+            <h3>Data Limitations</h3>
+
+            <ul>
+                {% for limitation in ai_report.limitations %}
+                    <li>{{ limitation }}</li>
+                {% empty %}
+                    <li>No additional limitations were provided.</li>
+                {% endfor %}
+            </ul>
+
+            <h3>Verified Operational Metrics</h3>
+
+            <div class="metrics">
+
+                <div class="metric">
+                    <strong>Total Assets</strong>
+                    <span>
+                        {{ ai_report.verified_metrics.total_assets }}
+                    </span>
+                </div>
+
+                <div class="metric">
+                    <strong>Total Requests</strong>
+                    <span>
+                        {{ ai_report.verified_metrics.total_requests }}
+                    </span>
+                </div>
+
+                <div class="metric">
+                    <strong>Completed Transfers</strong>
+                    <span>
+                        {{ ai_report.verified_metrics.completed_transfers }}
+                    </span>
+                </div>
+
+                <div class="metric">
+                    <strong>Transferred Units</strong>
+                    <span>
+                        {{ ai_report.verified_metrics.transferred_units }}
+                    </span>
+                </div>
+
+                <div class="metric">
+                    <strong>Completed Maintenance</strong>
+                    <span>
+                        {{ ai_report.verified_metrics.completed_maintenance }}
+                    </span>
+                </div>
+
+                <div class="metric">
+                    <strong>Completed Dispositions</strong>
+                    <span>
+                        {{ ai_report.verified_metrics.completed_dispositions }}
+                    </span>
+                </div>
+
+            </div>
+
+            <div class="panel">
+                <h3>Reporting Disclaimer</h3>
+
+                <p class="note">
+                    This narrative was generated by AI.
+                    The statistics above were calculated directly
+                    from recorded database activity.
+                    AI observations are not independently verified.
+                    Environmental or financial savings are not
+                    estimated. Human review is required.
+                </p>
+            </div>
+
+        {% endif %}
+
+    </section>
+
+</main>
+
+</body>
+</html>
