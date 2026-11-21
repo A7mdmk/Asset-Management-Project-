@@ -285,6 +285,21 @@
                         {{ inspection.get_recommendation_display }}
                     </div>
                 {% endif %}
+
+{% if inspection.status == "Completed" %}
+    {% if inspection.recommendation == "Retire" or inspection.recommendation == "Donate" or inspection.recommendation == "Recycle" or inspection.recommendation == "Dispose" %}
+        {% if inspection.asset.lifecycle == "Active" %}
+            <a
+                href="{% url 'disposition_request' inspection.pk %}"
+                class="btn"
+                style="margin-top: 15px;"
+            >
+                Request Disposition
+            </a>
+        {% endif %}
+    {% endif %}
+{% endif %}
+
 {% if inspection.status == "Pending" %}
     <p class="subtitle">
         This inspection is awaiting completion

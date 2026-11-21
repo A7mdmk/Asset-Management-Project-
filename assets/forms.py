@@ -201,3 +201,49 @@ class InspectionCompletionForm(forms.Form):
         label="Recommendation",
         widget=forms.Select,
     )
+
+class DispositionRequestForm(forms.Form):
+    reason = forms.CharField(
+        max_length=2000,
+        label="Disposition Reason",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 5,
+                "placeholder": (
+                    "Explain why this asset should "
+                    "be retired, donated, recycled, "
+                    "or disposed of..."
+                ),
+            }
+        ),
+    )
+
+class DispositionExecutionForm(forms.Form):
+    completion_notes = forms.CharField(
+        max_length=2000,
+        label="Completion Notes",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 5,
+                "placeholder": (
+                    "Describe how the disposition "
+                    "was completed..."
+                ),
+            }
+        ),
+    )
+
+class DispositionCancellationForm(forms.Form):
+    reason = forms.CharField(
+        max_length=1900,
+        label="Cancellation Reason",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 5,
+                "placeholder": (
+                    "Explain why this disposition "
+                    "should be cancelled..."
+                ),
+            }
+        ),
+    )

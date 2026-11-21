@@ -26,6 +26,13 @@ from .services import request_asset_inspection
 from .forms import InspectionCompletionForm
 from .services import complete_asset_inspection
 from .services import cancel_asset_inspection
+from .models import AssetDisposition
+from .forms import DispositionRequestForm
+from .services import request_asset_disposition
+from .forms import DispositionExecutionForm
+from .services import execute_asset_disposition
+from .forms import DispositionCancellationForm
+from .services import cancel_asset_disposition
 
 @login_required
 def asset_catalog(request):
@@ -751,3 +758,237 @@ def inspection_cancel_view(request, inspection_id):
         )
 
     return redirect("inspection_management")
+
+@role_required("Custodian")
+def disposition_management_view(request):
+    """
+    Display disposition records for assets assigned
+    to the logged-in custodian.
+    """
+
+    dispositions = (
+        AssetDisposition.objects
+        .filter(asset__custodian=request.user)
+        .select_related(
+            "asset",
+            "asset__department",
+            "inspection",
+            "requested_by",
+            "completed_by",
+        )
+        .order_by("-requested_at", "-pk")
+    )
+
+    selected_status = request.GET.get(
+        "status", ""
+    ).strip()
+
+    valid_statuses = {
+        value
+        for value, label in AssetDisposition.Status.choices
+    }
+
+    if selected_status in valid_statuses:
+        dispositions = dispositions.filter(
+            status=selected_status
+        )
+    else:
+        selected_status = ""
+
+    paginator = Paginator(dispositions, 10)
+
+    page_obj = paginator.get_page(
+        request.GET.get("page")
+    )
+
+    return render(
+        request,
+        "assets/dispositions.html",
+        {
+            "dispositions": page_obj.object_list,
+            "page_obj": page_obj,
+            "total_dispositions": paginator.count,
+            "selected_status": selected_status,
+            "status_choices": AssetDisposition.Status.choices,
+        },
+    )
+
+@role_required("Custodian")
+def disposition_request_view(request, inspection_id):
+    inspection = get_object_or_404(
+        AssetInspection.objects.select_related(
+            "asset",
+            "asset__department",
+        ),
+        pk=inspection_id,
+    )
+
+    if inspection.asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    recommendation_types = {
+        AssetInspection.Recommendation.RETIRE:
+            AssetDisposition.DispositionType.RETIRED,
+        AssetInspection.Recommendation.DONATE:
+            AssetDisposition.DispositionType.DONATED,
+        AssetInspection.Recommendation.RECYCLE:
+            AssetDisposition.DispositionType.RECYCLED,
+        AssetInspection.Recommendation.DISPOSE:
+            AssetDisposition.DispositionType.DISPOSED,
+    }
+
+    disposition_type = recommendation_types.get(
+        inspection.recommendation
+    )
+
+    if (
+        inspection.status != AssetInspection.Status.COMPLETED
+        or disposition_type is None
+        or inspection.asset.lifecycle != Asset.Lifecycle.ACTIVE
+    ):
+        raise PermissionDenied
+
+    if request.method == "POST":
+        form = DispositionRequestForm(request.POST)
+
+        if form.is_valid():
+            try:
+                request_asset_disposition(
+                    actor=request.user,
+                    inspection_id=inspection.pk,
+                    disposition_type=disposition_type,
+                    reason=form.cleaned_data["reason"],
+                )
+
+            except ValidationError as error:
+                messages = (
+                    error.messages
+                    if hasattr(error, "messages")
+                    else [str(error)]
+                )
+
+                for message in messages:
+                    form.add_error(None, message)
+
+            else:
+                return redirect("disposition_management")
+
+    else:
+        form = DispositionRequestForm()
+
+    return render(
+        request,
+        "assets/disposition_request.html",
+        {
+            "inspection": inspection,
+            "disposition_type": disposition_type,
+            "form": form,
+        },
+    )
+
+@role_required("Custodian")
+def disposition_execute_view(request, disposition_id):
+    disposition = get_object_or_404(
+        AssetDisposition.objects.select_related(
+            "asset",
+            "asset__department",
+            "inspection",
+        ),
+        pk=disposition_id,
+    )
+
+    if disposition.asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    if disposition.status != AssetDisposition.Status.PENDING:
+        return redirect("disposition_management")
+
+    if request.method == "POST":
+        form = DispositionExecutionForm(request.POST)
+
+        if form.is_valid():
+            try:
+                execute_asset_disposition(
+                    actor=request.user,
+                    disposition_id=disposition.pk,
+                    completion_notes=(
+                        form.cleaned_data["completion_notes"]
+                    ),
+                )
+
+            except ValidationError as error:
+                messages = (
+                    error.messages
+                    if hasattr(error, "messages")
+                    else [str(error)]
+                )
+
+                for message in messages:
+                    form.add_error(None, message)
+
+            else:
+                return redirect("disposition_management")
+
+    else:
+        form = DispositionExecutionForm()
+
+    return render(
+        request,
+        "assets/disposition_execute.html",
+        {
+            "disposition": disposition,
+            "form": form,
+        },
+    )
+
+@role_required("Custodian")
+def disposition_cancel_view(request, disposition_id):
+    disposition = get_object_or_404(
+        AssetDisposition.objects.select_related(
+            "asset",
+            "asset__department",
+        ),
+        pk=disposition_id,
+    )
+
+    if disposition.asset.custodian_id != request.user.pk:
+        raise PermissionDenied
+
+    if disposition.status != AssetDisposition.Status.PENDING:
+        return redirect("disposition_management")
+
+    if request.method == "POST":
+        form = DispositionCancellationForm(request.POST)
+
+        if form.is_valid():
+            try:
+                cancel_asset_disposition(
+                    actor=request.user,
+                    disposition_id=disposition.pk,
+                    reason=form.cleaned_data["reason"],
+                )
+
+            except ValidationError as error:
+                messages = (
+                    error.messages
+                    if hasattr(error, "messages")
+                    else [str(error)]
+                )
+
+                for message in messages:
+                    form.add_error(None, message)
+
+            else:
+                return redirect("disposition_management")
+
+    else:
+        form = DispositionCancellationForm()
+
+    return render(
+        request,
+        "assets/disposition_cancel.html",
+        {
+            "disposition": disposition,
+            "form": form,
+        },
+    )
